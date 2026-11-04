@@ -16,6 +16,7 @@ export const getStudents = async (filters = {}) => {
         s.fullName?.toLowerCase().includes(q) ||
         s.admissionNumber?.toLowerCase().includes(q) ||
         s.referenceId?.toLowerCase().includes(q) ||
+        s.schoolpayCode?.toLowerCase().includes(q) ||
         s.curriculum?.toLowerCase().includes(q)
     );
   }
@@ -23,6 +24,11 @@ export const getStudents = async (filters = {}) => {
 };
 
 export const getStudentById = async (id) => safeGet(COL, id);
+
+export const getStudentBySchoolpayCode = async (code) => {
+  if (!code) return null;
+  return safeGet(COL, String(code).trim());
+};
 
 export const createStudent = async (data) => {
   const all = await getAllDocs(COL);
@@ -32,10 +38,27 @@ export const createStudent = async (data) => {
   if (all.find((s) => s.admissionNumber === admissionNumber))
     throw new Error('Admission number already exists.');
 
-  const id      = generateId('student');
-  const today   = new Date().toISOString().split('T')[0];
+  const schoolpayCode = (data.schoolpayCode || '').trim();
+  const today         = new Date().toISOString().split('T')[0];
+
+  // Brand-new imported students use the SchoolPay code as the Firestore doc ID
+  // so the same file can be re-imported idempotently. Manual students keep the
+  // existing random ID. Never change existing doc IDs (marks reference them).
+  let id, source;
+  if (schoolpayCode) {
+    const existing = await safeGet(COL, schoolpayCode);
+    if (existing) throw new Error(`A student with SchoolPay code ${schoolpayCode} already exists.`);
+    id      = schoolpayCode;
+    source  = 'schoolpay';
+  } else {
+    id      = generateId('student');
+    source  = 'manual';
+  }
+
   const docData = {
     type:                 'student',
+    schoolpayCode,
+    source,
     admissionNumber,
     fullName:             data.fullName.trim(),
     dateOfBirth:          data.dateOfBirth          || '',
@@ -70,7 +93,11 @@ export const updateStudent = async (id, updates) => {
     classLevel,
     stream,
     classStream: `${classLevel}${stream}`,
-    // Preserve new fields if not being updated
+    // schoolpayCode and source are set at creation (import vs manual) and are
+    // never changed through the edit form — they override anything in updates.
+    schoolpayCode: existing.schoolpayCode || '',
+    source:        existing.source || 'manual',
+    // Preserve fields if not being updated
     curriculum: updates.curriculum !== undefined ? updates.curriculum : existing.curriculum || '',
     referenceId: updates.referenceId !== undefined ? updates.referenceId : existing.referenceId || '',
   };

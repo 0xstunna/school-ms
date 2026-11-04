@@ -43,7 +43,8 @@ school-ms/
 │   │   ├── index.js           # Firebase helper re-exports
 │   │   ├── configService.js   # School config, setup state
 │   │   ├── userService.js     # Auth, user CRUD
-│   │   ├── studentService.js  # Student CRUD
+│   │   ├── studentService.js  # Student CRUD (schoolpayCode, source fields)
+│   │   ├── studentImportService.js  # SchoolPay-driven import (parse, validate, commit)
 │   │   ├── staffService.js    # Staff CRUD
 │   │   ├── subjectService.js  # Subject CRUD
 │   │   ├── feeService.js      # Fee structures + payments
@@ -58,11 +59,13 @@ school-ms/
 │   │   ├── gradingSystemInterface.js  # GradingSystem interface contract
 │   │   ├── legacyGrading.js           # UCE model (untouched legacy logic)
 │   │   └── nlscGrading.js             # UNEB competence-based model (S1–S4)
+│   ├── lib/
+│   │   └── xlsx.mjs           # Vendored SheetJS parser (dynamic import, out of bundle)
 │   ├── scripts/
 │   │   └── migrateAssessmentMode.js   # Dry-run migration: sets assessmentMode per class
 │   ├── services/
 │   │   ├── resultsService.js          # Centralized results + dual ranking
-│   │   └── __tests__/                 # grading, ranking, marksEntry unit tests
+│   │   └── __tests__/                 # grading, ranking, marksEntry, studentImport unit tests
 │   ├── contexts/
 │   │   └── AuthContext.jsx    # Session management (localStorage)
 │   ├── guards/
@@ -81,7 +84,8 @@ school-ms/
 │   │   ├── setup/SetupWizard.jsx
 │   │   ├── auth/Login.jsx
 │   │   ├── dashboard/Dashboard.jsx
-│   │   ├── students/Students.jsx
+│   │   ├── students/Students.jsx       # Student register + add/edit modal
+│   ├── students/ImportStudents.jsx # SchoolPay import: upload, map, preview, commit
 │   │   ├── attendance/Attendance.jsx
 │   │   ├── exams/Exams.jsx
 │   │   ├── fees/Fees.jsx
@@ -110,6 +114,7 @@ school-ms/
 |--------------------|:-----:|:-------:|:------:|
 | Dashboard          | ✅    | ✅      | ✅     |
 | Students           | ✅    | ✅      | ❌     |
+| Import Students    | ✅    | ❌      | ❌     |
 | Attendance         | ✅    | ✅      | ❌     |
 | Exams & Results    | ✅    | ✅      | ❌     |
 | Fees               | ✅    | ❌      | ✅     |
@@ -139,7 +144,7 @@ All documents stored in Firestore (with persistent offline cache via IndexedDB).
 | `config` | `app_config`, `grading_settings` | School profile; NLSC grade bands / weights / certificate rule |
 | `classes` | `class_<level>_<year>` | Per-class `assessmentMode` (`LEGACY`\|`NLSC`) — set by migration/admin |
 | `users` | `user_<id>` | Staff login accounts (hashed pw) |
-| `students` | `student_<id>` | Student records (optional `curriculum` field) |
+| `students` | `student_<id>` (manual) or `schoolpayCode` (imported) | Student records — `schoolpayCode` + `source` ('manual'\|'schoolpay') fields |
 | `staff` | `staff_<id>` | Staff records |
 | `subjects` | `subject_<id>` | Subjects per class level |
 | `exams` | `exam_<id>` | Exam definitions |
@@ -217,6 +222,45 @@ node src/scripts/migrateAssessmentMode.js
 node src/scripts/migrateAssessmentMode.js --write
 ```
 
+---
+
+## 📥 SchoolPay Student Import
+
+The app supports bulk-importing students from a SchoolPay export file (CSV or Excel). There is **no SchoolPay API integration** — the admin uploads a SchoolPay export and the app parses it in the browser.
+
+### How it works
+
+1. **Upload** — Admin goes to **Students → Import Students** (admin-only route) and uploads a `.csv`, `.xlsx`, or `.xls` file exported from SchoolPay.
+2. **Column mapping** — The admin maps each file column to a student field (SchoolPay Code, Full Name, Class Level, Admission Number). Mappings are saved to `localStorage` for reuse.
+3. **Validation** — Rows are validated: missing SchoolPay code, duplicate code within the file, and unknown class are flagged. The admin can fix or skip problem rows.
+4. **Reconciliation** — Rows are matched against existing students:
+   - **New** → created with doc ID = `schoolpayCode`, `source: 'schoolpay'`
+   - **Link** → existing code-less student matched by admission number, linked via `schoolpayCode`
+   - **Update** → SchoolPay-owned fields (name, class) overwritten; school-owned fields (stream, guardian, notes, marks) preserved
+   - **Class changed** → class history appended, stream cleared, flagged as needing a stream
+   - **Unchanged** → no write
+5. **Commit** — Changes are written via Firestore batched writes (max 500 per batch), `merge: true`. Optionally, with the "full list" safeguard checked, SchoolPay students absent from the import are marked `inactive` (never deleted). Manual students are never inactivated.
+
+### Field ownership
+
+| Field | Owner | On import |
+|-------|-------|-----------|
+| `schoolpayCode` | SchoolPay | Written (doc ID for new students) |
+| `fullName` | SchoolPay | Overwritten |
+| `classLevel` | SchoolPay | Overwritten |
+| `stream` | School | Never touched |
+| `guardian` fields | School | Never touched |
+| `notes`, `photo`, `curriculum`, `marks` | School | Never touched |
+
+### Manual vs imported students
+
+- **Manual** ("Add Student" form): `source: 'manual'`, random doc ID, editable fields, never inactivated.
+- **Imported**: `source: 'schoolpay'`, doc ID = `schoolpayCode`, SchoolPay-owned fields read-only in the edit modal.
+
+### Testing
+
+`node src/services/__tests__/studentImport.test.js` — 13 scenarios covering code normalization, validation, matching, classification, inactivation safeguard, batched writes (≤500), merge preservation of school-owned fields, and class-change history.
+
 
 ---
 
@@ -243,6 +287,7 @@ Tests are plain Node scripts under `src/services/__tests__/`:
 - `grading.test.js` — both grading systems, band edge cases, missing CA, certificate rule
 - `ranking.test.js` — legacy dual ranking
 - `marksEntry.test.js` — marks validation
+- `studentImport.test.js` — import: normalization, validation, matching, classification, inactivation safeguard, batched writes (≤500)
 
 
 ---
@@ -263,7 +308,7 @@ Tests are plain Node scripts under `src/services/__tests__/`:
 2. **Subjects** → Add all subjects and assign them to class levels (e.g. Mathematics → S1, S2, S3, S4)
 3. **Staff** → Register all teaching and non-teaching staff
 4. **User Accounts** → Create Teacher and Bursar login accounts
-5. **Students** → Import or add students to their respective class/stream
+5. **Students** → Import (SchoolPay export) or add students to their respective class/stream
 6. **Fees** → Configure fee structures per class level and term
 7. **Attendance & Exams** → Teachers can now mark attendance and enter marks
 8. **Settings → Grading** → (NLSC schools) Verify CA/exam weights and grade bands

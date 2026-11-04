@@ -35,13 +35,16 @@ function buildYearOptions(currentYear) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const EMPTY = {
-  admissionNumber: '', fullName: '', dateOfBirth: '', gender: '',
+  schoolpayCode: '', admissionNumber: '', fullName: '', dateOfBirth: '', gender: '',
   classLevel: 'S1', stream: 'A', guardianName: '', guardianPhone: '',
-  guardianRelationship: '', enrollmentDate: '', notes: '',
+  guardianRelationship: '', enrollmentDate: '', notes: '', source: 'manual',
 };
 
 const StudentModal = ({ open, onClose, onSave, existing }) => {
   const isEdit = !!existing;
+  // SchoolPay-owned fields (schoolpayCode, fullName, classLevel) are read-only
+  // for students created by import, so they can't be drifted away from SchoolPay.
+  const readOnly = isEdit && existing?.source === 'schoolpay';
   const [form, setForm]       = useState(EMPTY);
   const [error, setError]     = useState('');
   const [loading, setLoading] = useState(false);
@@ -89,9 +92,11 @@ const StudentModal = ({ open, onClose, onSave, existing }) => {
         <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Personal Info</p>
         <FormRow>
           <Input label="Full Name" required placeholder="Student full name"
-            value={form.fullName} onChange={set('fullName')} />
+            value={form.fullName} onChange={set('fullName')} disabled={readOnly} />
           <Input label="Admission No." placeholder="Auto-generated if blank"
             value={form.admissionNumber} onChange={set('admissionNumber')} />
+          <Input label="SchoolPay Code" placeholder="SchoolPay reference number"
+            value={form.schoolpayCode} onChange={set('schoolpayCode')} disabled={readOnly} />
         </FormRow>
         <FormRow>
           <Input label="Date of Birth" type="date" value={form.dateOfBirth} onChange={set('dateOfBirth')} />
@@ -103,7 +108,7 @@ const StudentModal = ({ open, onClose, onSave, existing }) => {
         <div className="border-t border-slate-100 pt-4">
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Class Assignment</p>
           <FormRow cols={3}>
-            <Select label="Class" required value={form.classLevel} onChange={set('classLevel')}>
+            <Select label="Class" required value={form.classLevel} onChange={set('classLevel')} disabled={readOnly}>
               {CLASSES.map((c) => <option key={c} value={c}>{c}</option>)}
             </Select>
             <Select label="Stream" required value={form.stream} onChange={set('stream')}>
@@ -390,7 +395,7 @@ const Students = () => {
             <table className="w-full">
               <thead>
                 <tr className="border-b-2 border-slate-100">
-                  {['Adm. No.', 'Full Name', 'Class', 'Gender', 'Enrolled', 'Guardian', 'Status', 'Actions'].map((h) => (
+                  {['Adm. No.', 'SchoolPay Code', 'Full Name', 'Class', 'Gender', 'Enrolled', 'Guardian', 'Status', 'Actions'].map((h) => (
                     <th key={h} className="text-left py-2.5 px-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">{h}</th>
                   ))}
                 </tr>
@@ -399,6 +404,7 @@ const Students = () => {
                 {students.map((s) => (
                   <tr key={s.id} className="hover:bg-slate-50/70 transition-colors group">
                     <td className="py-3 px-3 text-sm font-mono text-slate-500">{s.admissionNumber}</td>
+                    <td className="py-3 px-3 text-sm font-mono text-slate-500">{s.schoolpayCode || '—'}</td>
                     <td className="py-3 px-3">
                       <p className="text-sm font-medium text-slate-800">{s.fullName}</p>
                     </td>

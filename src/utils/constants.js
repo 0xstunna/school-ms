@@ -73,6 +73,13 @@ export const NAV_ITEMS = [
     roles: ['admin', 'teacher'],
   },
   {
+    id: 'importStudents',
+    label: 'Import Students',
+    path: '/students/import',
+    icon: 'Upload',
+    roles: ['admin'],
+  },
+  {
     id: 'attendance',
     label: 'Attendance',
     path: '/attendance',

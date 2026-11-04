@@ -151,6 +151,7 @@ export const printReportCard = (cardData, schoolInfo = {}, termInfo = {}) => {
       <div class="badge"><strong>Adm No:</strong> ${student.admissionNumber || '—'}</div>
       <div class="badge"><strong>Class:</strong> ${student.classLevel || ''}${student.stream ? student.stream : ''}</div>
       ${student.gender ? `<div class="badge"><strong>Gender:</strong> ${student.gender}</div>` : ''}
+      ${student.schoolpayCode ? `<div class="badge"><strong>SchoolPay Code:</strong> ${student.schoolpayCode}</div>` : ''}
     </div>
 
     <table>
@@ -309,6 +310,7 @@ function printNlscReportCard({ student, subjectRows, subjectsAtDOrAbove, totalSu
       <div class="badge"><strong>Class:</strong> ${student.classLevel || ''}${student.stream ? student.stream : ''}</div>
       <div class="badge"><strong>Curriculum:</strong> New Lower Secondary</div>
       ${student.gender ? `<div class="badge"><strong>Gender:</strong> ${student.gender}</div>` : ''}
+      ${student.schoolpayCode ? `<div class="badge"><strong>SchoolPay Code:</strong> ${student.schoolpayCode}</div>` : ''}
     </div>
 
     <table>
@@ -405,6 +407,7 @@ export const printBroadsheet = (broadsheetData, schoolInfo = {}, termInfo = {}) 
       + '<td style="padding:4px 6px;text-align:center;">' + (idx + 1) + '</td>'
       + '<td style="padding:4px 6px;">' + (card.student ? card.student.fullName : '') + '</td>'
       + '<td style="padding:4px 6px;">' + (card.student && card.student.admissionNumber ? card.student.admissionNumber : '') + '</td>'
+      + '<td style="padding:4px 6px;">' + (card.student && card.student.schoolpayCode ? card.student.schoolpayCode : '') + '</td>'
       + '<td style="padding:4px 6px;">' + studentStream + '</td>'
       + subjectCells
       + '<td style="text-align:center;padding:4px 6px;font-weight:600;">' + ((card.aggMarks !== null && card.aggMarks !== undefined) ? card.aggMarks : '—') + '</td>'
@@ -450,6 +453,7 @@ export const printBroadsheet = (broadsheetData, schoolInfo = {}, termInfo = {}) 
     + '<th style="text-align:center;padding:6px 4px;">#</th>'
     + '<th style="text-align:left;padding:6px 4px;">Student Name</th>'
     + '<th style="text-align:center;padding:6px 4px;">Adm No</th>'
+    + '<th style="text-align:center;padding:6px 4px;">SchoolPay Code</th>'
     + '<th style="text-align:left;padding:6px 4px;">Stream</th>'
     + subjectHeaders
     + '<th style="text-align:center;padding:6px 4px;">Total</th>'
@@ -508,6 +512,7 @@ function printNlscBroadsheet({ reportCards, subjects, classLevel, stream, school
       + '<td style="padding:4px 6px;text-align:center;">' + (idx + 1) + '</td>'
       + '<td style="padding:4px 6px;">' + (card.student ? card.student.fullName : '') + '</td>'
       + '<td style="padding:4px 6px;">' + (card.student && card.student.admissionNumber ? card.student.admissionNumber : '') + '</td>'
+      + '<td style="padding:4px 6px;">' + (card.student && card.student.schoolpayCode ? card.student.schoolpayCode : '') + '</td>'
       + '<td style="padding:4px 6px;">' + studentStream + '</td>'
       + subjectCells
       + '<td style="text-align:center;padding:4px 6px;font-weight:600;">' + dOrAbove + '</td>'
@@ -552,6 +557,7 @@ function printNlscBroadsheet({ reportCards, subjects, classLevel, stream, school
     + '<th style="text-align:center;padding:6px 4px;">#</th>'
     + '<th style="text-align:left;padding:6px 4px;">Student Name</th>'
     + '<th style="text-align:center;padding:6px 4px;">Adm No</th>'
+    + '<th style="text-align:center;padding:6px 4px;">SchoolPay Code</th>'
     + '<th style="text-align:left;padding:6px 4px;">Stream</th>'
     + subjectHeaders
     + '<th style="text-align:center;padding:6px 4px;">Subjects at D+</th>'

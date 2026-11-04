@@ -2,14 +2,14 @@ import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, GraduationCap, ClipboardList, BookOpen,
   Wallet, Banknote, Receipt, Users, ShieldCheck, Settings,
-  ChevronRight, LogOut, School, BookMarked,
+  ChevronRight, LogOut, School, BookMarked, Upload,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { NAV_ITEMS, ROLE_LABELS } from '../../utils/constants.js';
 
 const ICONS = {
   LayoutDashboard, GraduationCap, ClipboardList, BookOpen,
-  Wallet, Banknote, Receipt, Users, ShieldCheck, Settings, BookMarked,
+  Wallet, Banknote, Receipt, Users, ShieldCheck, Settings, BookMarked, Upload,
 };
 
 const Sidebar = ({ onLogout }) => {

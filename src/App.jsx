@@ -8,6 +8,7 @@ import SetupWizard from './pages/setup/SetupWizard.jsx';
 import Login from './pages/auth/Login.jsx';
 import Dashboard from './pages/dashboard/Dashboard.jsx';
 import Students from './pages/students/Students.jsx';
+import ImportStudents from './pages/students/ImportStudents.jsx';
 import Attendance from './pages/attendance/Attendance.jsx';
 import Exams from './pages/exams/Exams.jsx';
 import Fees from './pages/fees/Fees.jsx';
@@ -33,6 +34,7 @@ const AppRoutes = ({ setupDone, schoolName, onSetupComplete }) => {
 
         {/* Academic — Admin + Teacher */}
         <Route path="students"   element={<RoleGuard roles={['admin','teacher']}><Students /></RoleGuard>} />
+        <Route path="students/import" element={<RoleGuard roles={['admin']}><ImportStudents /></RoleGuard>} />
         <Route path="attendance" element={<RoleGuard roles={['admin','teacher']}><Attendance /></RoleGuard>} />
         <Route path="exams"      element={<RoleGuard roles={['admin','teacher']}><Exams /></RoleGuard>} />
 
