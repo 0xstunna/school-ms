@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { School, User, CheckCircle2, ChevronRight, ChevronLeft, Eye, EyeOff } from 'lucide-react';
-import { createConfig } from '../../db/configService.js';
+import { createConfig, isSetupComplete } from '../../db/configService.js';
 import { createFirstAdmin } from '../../db/userService.js';
 import { TERMS } from '../../utils/constants.js';
 import { generateAcademicYears } from '../../utils/grading.js';
@@ -61,19 +61,35 @@ const SetupWizard = ({ onComplete }) => {
       if (err) { setError(err); return; }
       setLoading(true);
       try {
-        // createFirstAdmin MUST go first — createUserWithEmailAndPassword
-        // signs the new user into Firebase Auth immediately.
-        // Only after that does request.auth exist, so Firestore writes succeed.
+        // If setup was already completed (e.g. page refreshed mid-wizard),
+        // skip straight to the done step instead of re-creating everything.
+        const alreadyDone = await isSetupComplete();
+        if (alreadyDone) {
+          setStep(2);
+          return;
+        }
+
+        // createFirstAdmin creates the Firebase Auth account (or signs in if
+        // it already exists from an interrupted earlier attempt), then writes
+        // the Firestore profile. Only after that is the user authenticated,
+        // so the config write below is allowed by Firestore rules.
         await createFirstAdmin(adminData);
         await createConfig(schoolData);
         setStep(2);
       } catch (e) {
-        setError(e.message || 'Setup failed. Please try again.');
+        const msg = e.message || 'Setup failed. Please try again.';
+        // Give a helpful hint for the two most common setup errors.
+        if (e.code === 'auth/email-already-in-use') {
+          setError('An account with this email already exists. If you were mid-setup, click "Complete Setup" again — the existing account will be reused.');
+        } else if (e.code === 'permission-denied') {
+          setError('Missing or insufficient permissions to write school data. Please verify your Firebase Firestore rules allow authenticated writes, then click "Complete Setup" again.');
+        } else {
+          setError(msg);
+        }
       } finally {
         setLoading(false);
       }
     }
-    console.log("AUTH USER:", auth.currentUser);
   };
 
   return (

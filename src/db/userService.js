@@ -1,5 +1,6 @@
 import {
   createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
   updatePassword,
   reauthenticateWithCredential,
   EmailAuthProvider,
@@ -40,28 +41,34 @@ const createFirebaseAuthUser = async (email, password) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const createFirstAdmin = async (data) => {
-  // ⚠️  DO NOT call getUserByEmail here.
-  //     getUserByEmail reads the 'users' Firestore collection.
-  //     At setup time there is no authenticated user, so Firestore
-  //     rules block that read and throw "Missing or insufficient permissions".
-  //     Firebase Auth will reject a duplicate email on its own — that's enough.
+  const email = data.email.toLowerCase().trim();
+  let uid;
 
-  // 1. Create Firebase Auth account. This IMMEDIATELY signs the user in,
-  //    so every Firestore write after this line runs as an authenticated user.
-  const credential = await createUserWithEmailAndPassword(
-    auth,
-    data.email.trim(),
-    data.password,
-  );
-  const uid = credential.user.uid;
+  // 1. Create (or recover) a Firebase Auth account.
+  //    If the account already exists — for example because a previous setup
+  //    attempt created the Auth user but failed before writing the Firestore
+  //    profile — sign in with the same credentials instead of re-creating.
+  try {
+    const credential = await createUserWithEmailAndPassword(auth, email, data.password);
+    uid = credential.user.uid;
+  } catch (e) {
+    if (e.code === 'auth/email-already-in-use') {
+      const credential = await signInWithEmailAndPassword(auth, email, data.password);
+      uid = credential.user.uid;
+    } else {
+      throw e;
+    }
+  }
 
-  // 2. Write the Firestore profile. auth.currentUser is now set, so rules pass.
+  // 2. Write (or overwrite) the Firestore profile. The user is now signed in,
+  //    so Firestore rules that require request.auth will pass. setDocument
+  //    creates the doc if missing or replaces it if it already exists.
   const now     = new Date().toISOString();
   const docData = {
     type:            'user',
     uid,
     fullName:        data.fullName.trim(),
-    email:           data.email.toLowerCase().trim(),
+    email,
     role:            'admin',
     active:          true,
     assignedClasses: [],
