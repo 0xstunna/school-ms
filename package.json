@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
     "build": "vite build",
+    "test": "node src/services/__tests__/grading.test.js && node src/services/__tests__/ranking.test.js && node src/services/__tests__/marksEntry.test.js",
     "electron:build": "vite build && electron-builder",
     "preview": "vite preview"
   },

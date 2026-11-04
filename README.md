@@ -40,16 +40,29 @@ school-ms/
 │   └── preload.js       # Secure context bridge (minimal)
 ├── src/
 │   ├── db/
-│   │   ├── index.js           # PouchDB instance + helpers
+│   │   ├── index.js           # Firebase helper re-exports
 │   │   ├── configService.js   # School config, setup state
-│   │   ├── userService.js     # Auth, user CRUD (bcrypt)
+│   │   ├── userService.js     # Auth, user CRUD
 │   │   ├── studentService.js  # Student CRUD
 │   │   ├── staffService.js    # Staff CRUD
 │   │   ├── subjectService.js  # Subject CRUD
 │   │   ├── feeService.js      # Fee structures + payments
 │   │   ├── attendanceService.js  # Daily attendance
-│   │   ├── examService.js     # Exams + results + grading
-│   │   └── payrollService.js  # Payroll + expenses
+│   │   ├── examService.js     # Exams + results (marks entry)
+│   │   ├── classService.js    # Classes collection — assessmentMode (LEGACY/NLSC)
+│   │   ├── gradingSettingsService.js  # NLSC grade bands, weights, certificate rule
+│   │   ├── projectWorkService.js  # New curriculum project work records
+│   │   ├── payrollService.js  # Payroll + expenses
+│   │   └── reportCardService.js # Report card data (delegates to grading system)
+│   ├── gradingSystems/
+│   │   ├── gradingSystemInterface.js  # GradingSystem interface contract
+│   │   ├── legacyGrading.js           # UCE model (untouched legacy logic)
+│   │   └── nlscGrading.js             # UNEB competence-based model (S1–S4)
+│   ├── scripts/
+│   │   └── migrateAssessmentMode.js   # Dry-run migration: sets assessmentMode per class
+│   ├── services/
+│   │   ├── resultsService.js          # Centralized results + dual ranking
+│   │   └── __tests__/                 # grading, ranking, marksEntry unit tests
 │   ├── contexts/
 │   │   └── AuthContext.jsx    # Session management (localStorage)
 │   ├── guards/
@@ -74,10 +87,11 @@ school-ms/
 │   │   ├── fees/Fees.jsx
 │   │   ├── staff/Staff.jsx       # Also exports Payroll, Expenses, Settings
 │   │   ├── settings/Subjects.jsx
+│   │   ├── projectWork/ProjectWork.jsx   # New curriculum project work (NLSC)
 │   │   └── users/UserManagement.jsx
 │   ├── utils/
 │   │   ├── constants.js   # Classes, streams, roles, nav config
-│   │   └── grading.js     # Grade scale, formatCurrency, formatDate
+│   │   └── grading.js     # Legacy grade scale (kept untouched)
 │   ├── App.jsx            # Root router + setup/auth gate
 │   ├── main.jsx           # React entry
 │   └── index.css          # Tailwind + global styles
@@ -116,36 +130,93 @@ school-ms/
 
 ---
 
-## 🗄️ PouchDB Schema
+## 🗄️ Firestore Schema
 
-All documents stored in a single local PouchDB database (`school_management_v1`).
+All documents stored in Firestore (with persistent offline cache via IndexedDB).
 
-| Type                | `_id` prefix        | Description                          |
-|---------------------|---------------------|--------------------------------------|
-| `config`            | `config_app`        | School profile, setup flag           |
-| `user`              | `user_`             | Staff login accounts (hashed pw)     |
-| `student`           | `student_`          | Student records                      |
-| `staff`             | `staff_`            | Staff records                        |
-| `subject`           | `subject_`          | Subjects per class level             |
-| `fee_structure`     | `feestructure_`     | Fee amounts per class/term/year      |
-| `fee_payment`       | `feepayment_`       | Individual fee payments              |
-| `attendance_session`| `attendance_`       | Daily attendance per class/date      |
-| `exam`              | `exam_`             | Exam definitions                     |
-| `exam_result`       | `examresult_`       | Per-student exam marks               |
-| `payroll_entry`     | `payroll_`          | Salary payment records               |
-| `expense`           | `expense_`          | School expense records               |
+| Collection | Document ID pattern | Description |
+|------------|---------------------|-------------|
+| `config` | `app_config`, `grading_settings` | School profile; NLSC grade bands / weights / certificate rule |
+| `classes` | `class_<level>_<year>` | Per-class `assessmentMode` (`LEGACY`\|`NLSC`) — set by migration/admin |
+| `users` | `user_<id>` | Staff login accounts (hashed pw) |
+| `students` | `student_<id>` | Student records (optional `curriculum` field) |
+| `staff` | `staff_<id>` | Staff records |
+| `subjects` | `subject_<id>` | Subjects per class level |
+| `exams` | `exam_<id>` | Exam definitions |
+| `exam_results` | `result_<examId>_<studentId>` | Per-student exam marks (legacy grade/points preserved) |
+| `projectWork` | `pw_<studentId>_<year>_<rand>` | New curriculum project work records (S1–S4) |
+| `fee_structures` | `feestructure_<id>` | Fee amounts per class/term/year |
+| `fee_payments` | `feepayment_<id>` | Individual fee payments |
+| `attendance_sessions` | `attendance_<id>` | Daily attendance per class/date |
+| `payroll_entries` | `payroll_<id>` | Salary payment records |
+| `expenses` | `expense_<id>` | School expense records |
+
+**Data safety:** existing `exam_results` marks/grades are never rewritten. The migration only sets `assessmentMode` on `classes` docs.
 
 ---
 
-## 🎓 Grading Scale
+## 🎓 Grading — Dual Model (Legacy UCE + UNEB NLSC)
 
-| Grade | Range     | Points | Remarks   |
-|-------|-----------|--------|-----------|
-| A     | 80 – 100% | 1      | Excellent |
-| B     | 70 – 79%  | 2      | Good      |
-| C     | 60 – 69%  | 3      | Average   |
-| D     | 50 – 59%  | 4      | Pass      |
-| F     | 0 – 49%   | 9      | Fail      |
+The app supports two grading models side by side. Report cards, broadsheets and
+printing all route through a single `GradingSystem` interface; the active model
+is chosen per class.
+
+### Model selection
+
+A class's `assessmentMode` (`LEGACY` or `NLSC`) lives on its `classes` document
+and is set by the migration script or an admin. If no mode is stored, a
+year-based rule applies: **current-year S1–S4 → NLSC**, everything else →
+`LEGACY`. Existing classes keep `LEGACY` unless explicitly migrated.
+
+### LEGACY (UCE — D1/F9, aggregates, divisions)
+
+Unchanged. Scale: A 80–100, B 70–79, C 60–69, D 50–59, F 0–49. Computes
+aggregate marks/average percentage, overall grade, Division I–IV/Fail, and
+stream + overall class position. Historical `exam_results` marks and grades are
+never rewritten.
+
+### NLSC (UNEB competence-based, lower secondary S1–S4)
+
+Source of truth: Parliament statement of 20 Feb 2025 (Minister Peter Ogwang)
+on UNEB grading under the new curriculum.
+
+- Subject final score = **CA × caWeight% + exam × examWeight%** (defaults CA 20 /
+  exam 80; admin-editable in Settings → Grading)
+- Letter grades with descriptors: **A exceptional**, **B outstanding**, **C
+  satisfactory**, **D basic**, **E elementary**
+- Grade-band cut-offs live in `config/grading_settings`, seeded as placeholders
+  flagged **"VERIFY WITH UNEB"** and editable by admin only
+- **No aggregate, no division.** Overall result lists subject letters and the
+  count of subjects at D or above
+- Certificate: qualifies when ≥1 subject is at D or above (configurable rule)
+- Missing CA → **"Not graded"** with a visible warning
+- Project work is shown as a stand-alone line on the NLSC report card and
+  transcript view, separate from subject grades
+- Ranking uses mean final score per learner (stream + overall class position)
+
+### Collections added
+
+| Collection | Purpose |
+|------------|---------|
+| `classes` | Stores `assessmentMode` per class/year |
+| `config/grading_settings` | NLSC bands, weights, certificate rule (admin-only write) |
+| `projectWork` | Project work records for NLSC report cards |
+
+### Migration
+
+Run `node src/scripts/migrateAssessmentMode.js` (dry-run by default — no writes).
+Pass `--write` to apply. Before writing, it backs up all affected collections to
+`backups/migrate-<timestamp>/`. It sets `assessmentMode` on classes only and
+never touches marks or grades.
+
+```bash
+# Dry run (safe, shows what would change)
+node src/scripts/migrateAssessmentMode.js
+
+# Apply (requires Firebase config + network)
+node src/scripts/migrateAssessmentMode.js --write
+```
+
 
 ---
 
@@ -160,6 +231,19 @@ npm run electron:build
 #   - macOS:   .dmg
 #   - Linux:   .AppImage
 ```
+
+### Testing
+
+```bash
+# Run all unit tests (grading, ranking, marks entry)
+npm test
+```
+
+Tests are plain Node scripts under `src/services/__tests__/`:
+- `grading.test.js` — both grading systems, band edge cases, missing CA, certificate rule
+- `ranking.test.js` — legacy dual ranking
+- `marksEntry.test.js` — marks validation
+
 
 ---
 
@@ -182,6 +266,11 @@ npm run electron:build
 5. **Students** → Import or add students to their respective class/stream
 6. **Fees** → Configure fee structures per class level and term
 7. **Attendance & Exams** → Teachers can now mark attendance and enter marks
+8. **Settings → Grading** → (NLSC schools) Verify CA/exam weights and grade bands
+   (bands are placeholders flagged "VERIFY WITH UNEB" — confirm against the
+   official UNEB cut-offs before publishing report cards)
+9. **Migration** → Run `node src/scripts/migrateAssessmentMode.js` (dry-run, then
+   `--write`) to set `assessmentMode` on current-year S1–S4 classes to NLSC
 
 ---
 

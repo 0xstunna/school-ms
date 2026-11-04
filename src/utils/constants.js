@@ -124,6 +124,13 @@ export const NAV_ITEMS = [
     roles: ['admin'],
   },
   {
+    id: 'projectWork',
+    label: 'Project Work',
+    path: '/project-work',
+    icon: 'ClipboardList',
+    roles: ['admin', 'teacher'],
+  },
+  {
     id: 'users',
     label: 'User Accounts',
     path: '/users',

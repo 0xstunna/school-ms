@@ -110,7 +110,7 @@ const ReportModal = ({ open, onClose, rows, surEnabled, term, year }) => {
         paid:    members.filter((r) => r.status === 'paid').length,
         owing:   members.filter((r) => r.status === 'owing' || r.status === 'overdue').length,
         overdue: members.filter((r) => r.status === 'overdue').length,
-        due, paid: paid, bal, sur,
+        due, bal, sur,
         totalOwed: bal + sur,
         // Re-use 'paid' for total collected — rename for clarity
         collected: paid,

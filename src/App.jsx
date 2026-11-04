@@ -14,6 +14,7 @@ import Fees from './pages/fees/Fees.jsx';
 import { Staff, Payroll, Expenses, Settings } from './pages/staff/Staff.jsx';
 import UserManagement from './pages/users/UserManagement.jsx';
 import Subjects from './pages/settings/Subjects.jsx';
+import ProjectWork from './pages/projectWork/ProjectWork.jsx';
 import { LoadingScreen } from './components/common/Badge.jsx';
 import './index.css';
 
@@ -45,6 +46,7 @@ const AppRoutes = ({ setupDone, schoolName, onSetupComplete }) => {
         <Route path="users"    element={<RoleGuard roles={['admin']}><UserManagement /></RoleGuard>} />
         <Route path="settings"  element={<RoleGuard roles={['admin']}><Settings /></RoleGuard>} />
         <Route path="subjects"  element={<RoleGuard roles={['admin']}><Subjects /></RoleGuard>} />
+        <Route path="project-work" element={<RoleGuard roles={['admin','teacher']}><ProjectWork /></RoleGuard>} />
 
         {/* Catch-all */}
         <Route path="*" element={<Navigate to="/" replace />} />

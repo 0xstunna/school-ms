@@ -4,8 +4,9 @@ import { getExams, createExam, deleteExam, getResultsForExam, bulkSaveResults } 
 import { getStudents } from '../../db/studentService.js';
 import { getSubjects } from '../../db/subjectService.js';
 import { getConfig } from '../../db/configService.js';
+import { getProjectWork } from '../../db/projectWorkService.js';
 import { getReportCardData } from '../../db/reportCardService.js';
-import { printReportCard } from '../../utils/printUtils.js';
+import { printReportCard, printBroadsheet } from '../../utils/printUtils.js';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { CLASSES, STREAMS, EXAM_TYPES } from '../../utils/constants.js';
 import { formatDate, getGradeFromMarks } from '../../utils/grading.js';
@@ -13,6 +14,9 @@ import Button from '../../components/common/Button.jsx';
 import Modal, { ConfirmModal } from '../../components/common/Modal.jsx';
 import { Input, Select, FormRow } from '../../components/common/Input.jsx';
 import { GradeBadge, EmptyState, PageHeader, Card, Badge, LoadingScreen } from '../../components/common/Badge.jsx';
+
+/** Detect NLSC cards from data attached by resultsService (grading interface). */
+const isNlscCard = (card) => Boolean(card && card.subjectsAtDOrAbove !== undefined);
 
 /* ─────────────────────────────────────────────
    CREATE EXAM MODAL (unchanged)
@@ -103,10 +107,12 @@ const MarksModal = ({ open, onClose, exam }) => {
   const [loading, setLoading]   = useState(true);
   const [saving, setSaving]     = useState(false);
   const [saved, setSaved]       = useState(false);
+  const [saveErrors, setSaveErrors] = useState({});
 
   useEffect(() => {
     if (!open || !exam) return;
     setSaved(false);
+    setSaveErrors({});
     const stream = exam.classStream === 'all' ? undefined : exam.classStream.slice(2);
     Promise.all([
       getStudents({ classLevel: exam.classLevel, stream }),
@@ -121,10 +127,47 @@ const MarksModal = ({ open, onClose, exam }) => {
     }).finally(() => setLoading(false));
   }, [open, exam]);
 
+  const validateMarks = () => {
+    const errors = {};
+    const outOf = Number(exam?.outOf) || 100;
+    let hasError = false;
+
+    students.forEach((s) => {
+      const val = marks[s.id];
+      if (val === '' || val === null || val === undefined) {
+        // Missing marks — not an error, just not saved
+        return;
+      }
+      const n = Number(val);
+      if (isNaN(n)) {
+        errors[s.id] = 'Invalid mark';
+        hasError = true;
+      } else if (n < 0 || n > outOf) {
+        errors[s.id] = `Mark must be between 0 and ${outOf}`;
+        hasError = true;
+      }
+    });
+
+    setSaveErrors(errors);
+    return !hasError;
+  };
+
   const handleSave = async () => {
+    if (!validateMarks()) return;
+
     setSaving(true);
+    setSaveErrors({});
     try {
-      const toSave = students.map((s) => ({ studentId: s.id, marks: Number(marks[s.id]) || 0 }));
+      // Only save marks that have been entered — do NOT convert missing/empty to zero
+      const toSave = students
+        .filter((s) => marks[s.id] !== '' && marks[s.id] !== null && marks[s.id] !== undefined)
+        .map((s) => ({ studentId: s.id, marks: Number(marks[s.id]) }));
+
+      if (toSave.length === 0) {
+        setSaved(true);
+        return;
+      }
+
       await bulkSaveResults(exam.id, toSave, exam.outOf, user.id);
       setSaved(true);
     } finally { setSaving(false); }
@@ -164,13 +207,21 @@ const MarksModal = ({ open, onClose, exam }) => {
                   <p className="text-sm font-medium text-slate-800">{s.fullName}</p>
                   <p className="text-xs text-slate-400">{s.admissionNumber}</p>
                 </div>
-                <div className="col-span-3">
+                <div className="col-span-3 flex flex-col gap-0.5">
                   <input type="number" min="0" max={exam?.outOf}
                     value={marks[s.id] ?? ''}
                     onChange={(e) => setMarks((p) => ({ ...p, [s.id]: e.target.value }))}
-                    className="w-full h-8 px-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-navy-500 text-center"
+                    className={
+                      'w-full h-8 px-2 rounded-lg border text-sm focus:outline-none focus:ring-2 text-center ' +
+                      (saveErrors[s.id]
+                        ? 'border-red-400 focus:ring-red-400'
+                        : 'border-slate-200 focus:ring-navy-500 hover:border-slate-300')
+                    }
                     placeholder="—"
                   />
+                  {saveErrors[s.id] && (
+                    <span className="text-xs text-red-600">{saveErrors[s.id]}</span>
+                  )}
                 </div>
                 <div className="col-span-3">
                   {gradeInfo ? (
@@ -223,10 +274,21 @@ const ReportCardsModal = ({ open, onClose, config }) => {
     }
   };
 
-  const handlePrintOne = (card) => {
+  const handlePrintOne = async (card) => {
     setPrinting(card.student.id);
     try {
-      printReportCard(card, {
+      const printData = { ...card };
+      // NLSC: attach project work for the stand-alone line on the report card
+      if (card.subjectsAtDOrAbove !== undefined) {
+        try {
+          const pw = await getProjectWork({ studentId: card.student.id, year: config?.academicYear });
+          printData.projectWork = pw;
+        } catch (e) {
+          console.warn('Could not load project work for print:', e.message);
+          printData.projectWork = [];
+        }
+      }
+      printReportCard(printData, {
         name:    config?.schoolName    || '',
         address: config?.schoolAddress || '',
         motto:   config?.schoolMotto   || '',
@@ -305,6 +367,9 @@ const ReportCardsModal = ({ open, onClose, config }) => {
           <div>
             <p className="text-xs text-slate-400 mb-3">
               {cards.reportCards.length} student{cards.reportCards.length !== 1 ? 's' : ''} · {cards.subjects.length} subject{cards.subjects.length !== 1 ? 's' : ''}
+              {cards.reportCards[0]?.subjectsAtDOrAbove !== undefined && (
+                <span className="text-slate-400 ml-2">· NLSC (competence-based) grading</span>
+              )}
             </p>
             <div className="rounded-xl border border-slate-200 overflow-hidden">
               <table className="w-full text-sm">
@@ -315,51 +380,86 @@ const ReportCardsModal = ({ open, onClose, config }) => {
                     {cards.subjects.map((s) => (
                       <th key={s} className="px-3 py-2.5 text-center font-semibold text-xs uppercase tracking-wide whitespace-nowrap">{s}</th>
                     ))}
-                    <th className="px-4 py-2.5 text-center font-semibold text-xs uppercase tracking-wide">Avg %</th>
-                    <th className="px-4 py-2.5 text-center font-semibold text-xs uppercase tracking-wide">Grade</th>
+                    {cards.reportCards[0]?.subjectsAtDOrAbove !== undefined ? (
+                      <>
+                        <th className="px-4 py-2.5 text-center font-semibold text-xs uppercase tracking-wide">D+</th>
+                        <th className="px-4 py-2.5 text-center font-semibold text-xs uppercase tracking-wide">Cert.</th>
+                      </>
+                    ) : (
+                      <>
+                        <th className="px-4 py-2.5 text-center font-semibold text-xs uppercase tracking-wide">Avg %</th>
+                        <th className="px-4 py-2.5 text-center font-semibold text-xs uppercase tracking-wide">Grade</th>
+                      </>
+                    )}
                     <th className="px-4 py-2.5 text-right font-semibold text-xs uppercase tracking-wide">Print</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {cards.reportCards.map((card, idx) => (
-                    <tr key={card.student.id}
-                      className={`border-b border-slate-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-navy-50/40 transition-colors`}
-                    >
-                      <td className="px-4 py-2.5 text-xs text-slate-400 font-medium">
-                        {card.position ?? '—'}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <p className="font-medium text-slate-800">{card.student.fullName}</p>
-                        <p className="text-xs text-slate-400">{card.student.admissionNumber}</p>
-                      </td>
-                      {cards.subjects.map((subj) => {
-                        const row = card.subjectRows.find((r) => r.subjectName === subj);
-                        return (
-                          <td key={subj} className="px-3 py-2.5 text-center text-xs">
-                            {row?.totalMarks !== null ? (
-                              <span className="font-medium">{row.totalMarks}<span className="text-slate-400">/{row.totalOutOf}</span></span>
-                            ) : <span className="text-slate-300">—</span>}
-                          </td>
-                        );
-                      })}
-                      <td className="px-4 py-2.5 text-center font-semibold">
-                        {card.avgPercentage !== null ? `${card.avgPercentage}%` : '—'}
-                      </td>
-                      <td className={`px-4 py-2.5 text-center font-bold text-base ${gradeColor(card.overallGrade)}`}>
-                        {card.overallGrade}
-                      </td>
-                      <td className="px-4 py-2.5 text-right">
-                        <button
-                          onClick={() => handlePrintOne(card)}
-                          disabled={printing === card.student.id}
-                          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-navy-100 text-navy-700 hover:bg-navy-200 text-xs font-medium transition-colors disabled:opacity-50"
-                        >
-                          <Printer className="w-3 h-3" />
-                          {printing === card.student.id ? '...' : 'Print'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {cards.reportCards.map((card, idx) => {
+                    const isNlsc = card.subjectsAtDOrAbove !== undefined;
+                    return (
+                      <tr key={card.student.id}
+                        className={`border-b border-slate-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-navy-50/40 transition-colors`}
+                      >
+                        <td className="px-4 py-2.5 text-xs text-slate-400 font-medium">
+                          {card.position ?? '—'}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <p className="font-medium text-slate-800">{card.student.fullName}</p>
+                          <p className="text-xs text-slate-400">{card.student.admissionNumber}</p>
+                        </td>
+                        {cards.subjects.map((subj) => {
+                          const row = card.subjectRows.find((r) => r.subjectName === subj);
+                          if (isNlsc) {
+                            const final = row?.finalScore !== null ? row.finalScore : '—';
+                            const letter = row?.letter || '—';
+                            return (
+                              <td key={subj} className="px-3 py-2.5 text-center text-xs">
+                                <div className="font-medium">{final}</div>
+                                <div className={`text-xs font-bold ${gradeColor(letter)}`}>{letter}</div>
+                              </td>
+                            );
+                          }
+                          return (
+                            <td key={subj} className="px-3 py-2.5 text-center text-xs">
+                              {row?.totalMarks !== null ? (
+                                <span className="font-medium">{row.totalMarks}<span className="text-slate-400">/{row.totalOutOf}</span></span>
+                              ) : <span className="text-slate-300">—</span>}
+                            </td>
+                          );
+                        })}
+                        {isNlsc ? (
+                          <>
+                            <td className="px-4 py-2.5 text-center font-semibold">
+                              {card.subjectsAtDOrAbove !== null ? card.subjectsAtDOrAbove : '—'}
+                            </td>
+                            <td className="px-4 py-2.5 text-center font-semibold">
+                              {card.certificateEligible ? 'YES' : 'NO'}
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="px-4 py-2.5 text-center font-semibold">
+                              {card.avgPercentage !== null ? `${card.avgPercentage}%` : '—'}
+                            </td>
+                            <td className={`px-4 py-2.5 text-center font-bold text-base ${gradeColor(card.overallGrade)}`}>
+                              {card.overallGrade}
+                            </td>
+                          </>
+                        )}
+                        <td className="px-4 py-2.5 text-right">
+                          <button
+                            onClick={() => handlePrintOne(card)}
+                            disabled={printing === card.student.id}
+                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-navy-100 text-navy-700 hover:bg-navy-200 text-xs font-medium transition-colors disabled:opacity-50"
+                          >
+                            <Printer className="w-3 h-3" />
+                            {printing === card.student.id ? '...' : 'Print'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -370,9 +470,215 @@ const ReportCardsModal = ({ open, onClose, config }) => {
   );
 };
 
-/* ─────────────────────────────────────────────
-   MAIN PAGE
-───────────────────────────────────────────── */
+/*** BROADSHEET MODAL START ***/
+const BroadsheetModal = ({ open, onClose, config }) => {
+  const [classLevel, setClassLevel] = useState('S1');
+  const [stream, setStream]         = useState('all');
+  const [loading, setLoading]       = useState(false);
+  const [data, setData]             = useState(null);
+  const [error, setError]           = useState('');
+
+  useEffect(() => {
+    if (open) { setData(null); setError(''); }
+  }, [open]);
+
+  const handleGenerate = async () => {
+    setLoading(true);
+    setError('');
+    setData(null);
+    try {
+      const result = await getReportCardData(classLevel, stream, config?.academicYear, config?.currentTerm);
+      if (result.reportCards.length === 0) {
+        setError('No students or no exam results found for this selection.');
+      } else {
+        setData(result);
+      }
+    } catch (e) {
+      setError(e.message || 'Failed to load broadsheet data.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePrint = () => {
+    if (!data) return;
+    printBroadsheet(data, {
+      name:    config?.schoolName    || '',
+      address: config?.schoolAddress || '',
+      motto:   config?.schoolMotto   || '',
+      logoUrl: config?.logoUrl       || '',
+    }, {
+      academicYear: config?.academicYear,
+      term:         config?.currentTerm,
+    });
+  };
+
+  const gradeColor = (g) => {
+    const map = { A: 'text-emerald-700', B: 'text-sky-700', C: 'text-amber-700', D: 'text-orange-600', F: 'text-red-600', U: 'text-red-600' };
+    return map[g?.[0]] || 'text-slate-600';
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Class Broadsheet" size="full"
+      subtitle={config ? config.currentTerm + ", " + config.academicYear : ''}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>Close</Button>
+          {data && (
+            <Button icon={Printer} onClick={handlePrint} loading={loading}>
+              Print Broadsheet
+            </Button>
+          )}
+        </>
+      }
+    >
+      <div className="space-y-5">
+        {/* Filters */}
+        <div className="flex items-end gap-3 p-4 bg-slate-50 rounded-xl border border-slate-100">
+          <div className="flex-1">
+            <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Class</label>
+            <select
+              value={classLevel}
+              onChange={(e) => { setClassLevel(e.target.value); setData(null); }}
+              className="w-full h-9 px-3 rounded-lg border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-navy-500"
+            >
+              {CLASSES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div className="flex-1">
+            <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide">Stream</label>
+            <select
+              value={stream}
+              onChange={(e) => { setStream(e.target.value); setData(null); }}
+              className="w-full h-9 px-3 rounded-lg border border-slate-200 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-navy-500"
+            >
+              <option value="all">All Streams</option>
+              {STREAMS.map((s) => <option key={s} value={classLevel + s}>{classLevel}{s}</option>)}
+            </select>
+          </div>
+          <Button onClick={handleGenerate} loading={loading} icon={FileText}>
+            Generate
+          </Button>
+        </div>
+
+        {error && (
+          <div className="px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">{error}</div>
+        )}
+
+        {/* Results table */}
+        {data && (
+          <div className="overflow-x-auto">
+            <p className="text-xs text-slate-400 mb-3">
+              {data.reportCards.length} student{data.reportCards.length !== 1 ? 's' : ''} · {data.subjects.length} subject{data.subjects.length !== 1 ? 's' : ''}
+              {data.reportCards[0]?.subjectsAtDOrAbove !== undefined && (
+                <span className="text-slate-400 ml-2">· NLSC (competence-based) grading</span>
+              )}
+            </p>
+            <div className="rounded-xl border border-slate-200 overflow-hidden">
+              <table className="w-full text-sm min-w-full">
+                <thead>
+                  <tr className="bg-navy-900 text-white">
+                    <th className="px-4 py-2.5 text-left font-semibold text-xs uppercase tracking-wide">#</th>
+                    <th className="px-4 py-2.5 text-left font-semibold text-xs uppercase tracking-wide">Student Name</th>
+                    <th className="px-4 py-2.5 text-left font-semibold text-xs uppercase tracking-wide">Adm No</th>
+                    <th className="px-4 py-2.5 text-left font-semibold text-xs uppercase tracking-wide">Stream</th>
+                    {data.subjects.map((subj) => (
+                      <th key={subj} className="px-3 py-2.5 text-center font-semibold text-xs uppercase tracking-wide whitespace-nowrap">{subj}</th>
+                    ))}
+                    {data.reportCards[0]?.subjectsAtDOrAbove !== undefined ? (
+                      <>
+                        <th className="px-4 py-2.5 text-center font-semibold text-xs uppercase tracking-wide">Subjects at D+</th>
+                        <th className="px-4 py-2.5 text-center font-semibold text-xs uppercase tracking-wide">Certificate</th>
+                      </>
+                    ) : (
+                      <>
+                        <th className="px-4 py-2.5 text-center font-semibold text-xs uppercase tracking-wide">Total</th>
+                        <th className="px-4 py-2.5 text-center font-semibold text-xs uppercase tracking-wide">Avg %</th>
+                        <th className="px-4 py-2.5 text-center font-semibold text-xs uppercase tracking-wide">Grade</th>
+                      </>
+                    )}
+                    <th className="px-4 py-2.5 text-center font-semibold text-xs uppercase tracking-wide">Stream Position</th>
+                    <th className="px-4 py-2.5 text-center font-semibold text-xs uppercase tracking-wide">Overall Class Position</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.reportCards.map((card, idx) => {
+                    const isNlsc = card.subjectsAtDOrAbove !== undefined;
+                    return (
+                      <tr key={card.student.id}
+                        className={'border-b border-slate-100 ' + (idx % 2 === 0 ? 'bg-white' : 'bg-slate-50') + ' hover:bg-navy-50/40 transition-colors'}
+                      >
+                        <td className="px-4 py-2.5 text-xs text-slate-400 font-medium">{idx + 1}</td>
+                        <td className="px-4 py-2.5">
+                          <p className="font-medium text-slate-800">{card.student.fullName}</p>
+                          <p className="text-xs text-slate-400">{card.student.admissionNumber}</p>
+                        </td>
+                        <td className="px-4 py-2.5 text-xs text-slate-600">{card.student.admissionNumber}</td>
+                        <td className="px-4 py-2.5 text-xs text-slate-600">
+                          {card.streamKey || (card.student.classLevel || classLevel) + (card.student.stream || '')}
+                        </td>
+                        {data.subjects.map((subj) => {
+                          const row = card.subjectRows.find((r) => r.subjectName === subj);
+                          if (isNlsc) {
+                            const final = row?.finalScore !== null ? row.finalScore : '—';
+                            const letter = row?.letter || '—';
+                            return (
+                              <td key={subj} className="px-3 py-2.5 text-center text-xs">
+                                <div className="font-medium">{final}</div>
+                                <div className={`text-xs font-bold ${gradeColor(letter)}`}>{letter}</div>
+                              </td>
+                            );
+                          }
+                          return (
+                            <td key={subj} className="px-3 py-2.5 text-center text-xs">
+                              {row?.totalMarks !== null ? (
+                                <span className="font-medium">{row.totalMarks}<span className="text-slate-400">/{row.totalOutOf}</span></span>
+                              ) : <span className="text-slate-300">—</span>}
+                            </td>
+                          );
+                        })}
+                        {isNlsc ? (
+                          <>
+                            <td className="px-4 py-2.5 text-center font-semibold">
+                              {card.subjectsAtDOrAbove !== null ? card.subjectsAtDOrAbove : '—'}
+                            </td>
+                            <td className={`px-4 py-2.5 text-center font-bold text-base ${card.certificateEligible ? 'text-emerald-700' : 'text-red-600'}`}>
+                              {card.certificateEligible ? 'YES' : 'NO'}
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="px-4 py-2.5 text-center font-semibold">
+                              {card.aggMarks !== null ? card.aggMarks : '—'}
+                            </td>
+                            <td className="px-4 py-2.5 text-center font-semibold">
+                              {card.avgPercentage !== null ? card.avgPercentage + '%' : '—'}
+                            </td>
+                            <td className={'px-4 py-2.5 text-center font-bold text-base ' + gradeColor(card.overallGrade)}>
+                              {card.overallGrade}
+                            </td>
+                          </>
+                        )}
+                        <td className="px-4 py-2.5 text-center text-xs">
+                          {card.streamPosition !== null ? card.streamPosition + ' / ' + (card.streamTotal || '—') : '—'}
+                        </td>
+                        <td className="px-4 py-2.5 text-center text-xs">
+                          {card.overallClassPosition !== null ? card.overallClassPosition + ' / ' + (card.overallClassTotal || '—') : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+};
+
+/*** BROADSHEET MODAL END ***/
 const Exams = () => {
   const { user } = useAuth();
   const [exams, setExams]               = useState([]);
@@ -380,6 +686,7 @@ const Exams = () => {
   const [loading, setLoading]           = useState(true);
   const [createOpen, setCreateOpen]     = useState(false);
   const [reportCardsOpen, setReportCardsOpen] = useState(false);   // ← NEW
+  const [broadsheetOpen, setBroadsheetOpen]   = useState(false);   // ← NEW
   const [marksExam, setMarksExam]       = useState(null);
   const [deleting, setDeleting]         = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -417,13 +724,22 @@ const Exams = () => {
           <div className="flex items-center gap-2">
             {/* Report Cards button — only meaningful once exams exist */}
             {exams.length > 0 && (
-              <Button
-                variant="secondary"
-                icon={FileText}
-                onClick={() => setReportCardsOpen(true)}
-              >
-                Report Cards
-              </Button>
+              <>
+                <Button
+                  variant="secondary"
+                  icon={FileText}
+                  onClick={() => setReportCardsOpen(true)}
+                >
+                  Report Cards
+                </Button>
+                <Button
+                  variant="secondary"
+                  icon={ClipboardList}
+                  onClick={() => setBroadsheetOpen(true)}
+                >
+                  Class Broadsheet
+                </Button>
+              </>
             )}
             <Button icon={Plus} onClick={() => setCreateOpen(true)}>Create Exam</Button>
           </div>
@@ -470,6 +786,7 @@ const Exams = () => {
       <ExamModal open={createOpen} onClose={() => setCreateOpen(false)} onSave={handleCreate} config={config} />
       <MarksModal open={!!marksExam} onClose={() => setMarksExam(null)} exam={marksExam} />
       <ReportCardsModal open={reportCardsOpen} onClose={() => setReportCardsOpen(false)} config={config} />
+      <BroadsheetModal open={broadsheetOpen} onClose={() => setBroadsheetOpen(false)} config={config} />
       <ConfirmModal
         open={!!deleting} onClose={() => setDeleting(null)}
         onConfirm={handleDelete} loading={actionLoading}

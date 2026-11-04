@@ -8,10 +8,15 @@ export const getStudents = async (filters = {}) => {
   if (filters.stream)      results = results.filter((s) => s.stream      === filters.stream);
   if (filters.classStream) results = results.filter((s) => s.classStream === filters.classStream);
   if (filters.status)      results = results.filter((s) => s.status      === filters.status);
+  if (filters.curriculum)  results = results.filter((s) => s.curriculum  === filters.curriculum);
   if (filters.search) {
     const q = filters.search.toLowerCase();
     results = results.filter(
-      (s) => s.fullName?.toLowerCase().includes(q) || s.admissionNumber?.toLowerCase().includes(q)
+      (s) =>
+        s.fullName?.toLowerCase().includes(q) ||
+        s.admissionNumber?.toLowerCase().includes(q) ||
+        s.referenceId?.toLowerCase().includes(q) ||
+        s.curriculum?.toLowerCase().includes(q)
     );
   }
   return results.sort((a, b) => a.fullName?.localeCompare(b.fullName || '') || 0);
@@ -44,6 +49,9 @@ export const createStudent = async (data) => {
     status:               'active',
     enrollmentDate:       data.enrollmentDate       || today,
     notes:                data.notes               || '',
+    // New curriculum support — optional, backward-compatible
+    curriculum:           data.curriculum           || '',
+    referenceId:          data.referenceId          || '',
   };
 
   await setDocument(COL, id, docData);
@@ -57,7 +65,15 @@ export const updateStudent = async (id, updates) => {
   const classLevel = updates.classLevel || existing.classLevel;
   const stream     = updates.stream     || existing.stream;
 
-  const payload = { ...updates, classLevel, stream, classStream: `${classLevel}${stream}` };
+  const payload = {
+    ...updates,
+    classLevel,
+    stream,
+    classStream: `${classLevel}${stream}`,
+    // Preserve new fields if not being updated
+    curriculum: updates.curriculum !== undefined ? updates.curriculum : existing.curriculum || '',
+    referenceId: updates.referenceId !== undefined ? updates.referenceId : existing.referenceId || '',
+  };
   await updateDocument(COL, id, payload);
   return { ...existing, ...payload, id };
 };

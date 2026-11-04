@@ -8,6 +8,7 @@ import {
 import { getStaff, createStaff, updateStaff, deleteStaff } from '../../db/staffService.js';
 import { getPayrollEntries, recordPayroll, getExpenses, recordExpense, deleteExpense } from '../../db/payrollService.js';
 import { getConfig, updateConfig } from '../../db/configService.js';
+import { getGradingSettings, createOrUpdateGradingSettings, DEFAULT_GRADE_BANDS } from '../../db/gradingSettingsService.js';
 import { printPayrollReceipt } from '../../utils/printUtils.js';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { STAFF_POSITIONS, PAYMENT_METHODS, EXPENSE_CATEGORIES, TERMS } from '../../utils/constants.js';
@@ -897,6 +898,7 @@ export const Expenses = () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const Settings = () => {
+  const { user } = useAuth();
   const [config, setConfig]   = useState(null);
   const [form, setForm]       = useState({});
   const [loading, setLoading] = useState(true);
@@ -905,19 +907,45 @@ export const Settings = () => {
   const [error, setError]     = useState('');
   const years = generateAcademicYears();
 
+  // NLSC grading settings (admin-editable)
+  const [grading, setGrading]          = useState(null);
+  const [gradingForm, setGradingForm]  = useState({});
+  const [gradingLoading, setGradingLoading] = useState(true);
+  const [gradingSaving, setGradingSaving] = useState(false);
+  const [gradingSaved, setGradingSaved]   = useState(false);
+
   useEffect(() => {
-    getConfig().then((cfg) => {
-      setConfig(cfg);
-      setForm({
-        schoolName:    cfg?.schoolName    || '',
-        schoolMotto:   cfg?.schoolMotto   || '',
-        schoolAddress: cfg?.schoolAddress || '',
-        schoolPhone:   cfg?.schoolPhone   || '',
-        schoolEmail:   cfg?.schoolEmail   || '',
-        academicYear:  cfg?.academicYear  || years[0],
-        currentTerm:   cfg?.currentTerm   || 'Term 1',
-      });
-    }).finally(() => setLoading(false));
+    let cancelled = false;
+    (async () => {
+      try {
+        const [cfg, gs] = await Promise.all([getConfig(), getGradingSettings().catch(() => null)]);
+        if (cancelled) return;
+        setConfig(cfg);
+        setGrading(gs);
+        setForm({
+          schoolName:    cfg?.schoolName    || '',
+          schoolMotto:   cfg?.schoolMotto   || '',
+          schoolAddress: cfg?.schoolAddress || '',
+          schoolPhone:   cfg?.schoolPhone   || '',
+          schoolEmail:   cfg?.schoolEmail   || '',
+          academicYear:  cfg?.academicYear  || years[0],
+          currentTerm:   cfg?.currentTerm   || 'Term 1',
+        });
+        if (gs) {
+          setGradingForm({
+            caWeight:                  gs.caWeight,
+            examWeight:                gs.examWeight,
+            minSubjectsAtDOrAbove:     gs.certificateRule?.minSubjectsAtDOrAbove ?? 1,
+            gradeBands: JSON.stringify((gs.gradeBands || DEFAULT_GRADE_BANDS).map((b) => ({ letter: b.letter, min: b.min, descriptor: b.descriptor })).filter(Boolean), null, 2),
+          });
+        }
+      } catch (e) {
+        setError(e.message || 'Failed to load settings.');
+      } finally {
+        if (!cancelled) { setLoading(false); setGradingLoading(false); }
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   const set = (f) => (e) => setForm((p) => ({ ...p, [f]: e.target.value }));
@@ -932,6 +960,35 @@ export const Settings = () => {
       setTimeout(() => setSaved(false), 3000);
     } catch (e) { setError(e.message); }
     finally { setSaving(false); }
+  };
+
+  const setGradingField = (f) => (e) => setGradingForm((p) => ({ ...p, [f]: e.target.value }));
+
+  const handleSaveGrading = async () => {
+    if (!gradingForm.caWeight || !gradingForm.examWeight) { setError('CA and exam weights are required.'); return; }
+    let bands;
+    try {
+      bands = JSON.parse(gradingForm.gradeBands || '[]');
+    } catch (e) { setError('Grade bands must be valid JSON.'); return; }
+    if (!bands.length) { setError('At least one grade band is required.'); return; }
+    // bands sorted descending by min
+    bands = bands.map((b) => ({ letter: b.letter, min: Number(b.min), descriptor: b.descriptor || '' })).sort((a, b) => b.min - a.min);
+    setGradingSaving(true);
+    try {
+      await createOrUpdateGradingSettings({
+        caWeight: Number(gradingForm.caWeight),
+        examWeight: Number(gradingForm.examWeight),
+        certificateRule: { minSubjectsAtDOrAbove: Number(gradingForm.minSubjectsAtDOrAbove) || 1 },
+        gradeBands: bands,
+      }, user?.id);
+      setGradingSaved(true);
+      setError('');
+      // reload settings
+      const gs = await getGradingSettings();
+      setGrading(gs);
+      setTimeout(() => setGradingSaved(false), 3000);
+    } catch (e) { setError(e.message); }
+    finally { setGradingSaving(false); }
   };
 
   if (loading) return <LoadingScreen />;
@@ -960,6 +1017,40 @@ export const Settings = () => {
               </Select>
             </FormRow>
           </div>
+
+          {/* NLSC Grading Settings — admin only */}
+          {!gradingLoading && (
+            <Card className="mt-6">
+              <div className="flex items-center gap-2 mb-4">
+                <h4 className="font-display font-semibold text-slate-800">NLSC Grading Settings (Competence-Based)</h4>
+                <Badge variant="default" className="text-[10px]">S1–S4 · UNEB</Badge>
+              </div>
+              <p className="text-xs text-slate-500 mb-4">
+                Grade-band cut-offs are placeholders flagged <strong>"VERIFY WITH UNEB"</strong>. Final scores use
+                CA × caWeight% + exam × examWeight%. A–E letters: exceptional / outstanding / satisfactory / basic / elementary.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <Input label="CA weight (%)" type="number" value={gradingForm.caWeight} onChange={setGradingField('caWeight')} />
+                <Input label="Exam weight (%)" type="number" value={gradingForm.examWeight} onChange={setGradingField('examWeight')} />
+                <Input label="Min subjects at D+ for certificate" type="number" value={gradingForm.minSubjectsAtDOrAbove} onChange={setGradingField('minSubjectsAtDOrAbove')} />
+              </div>
+              <Textarea label="Grade bands (JSON — sorted high→low by min)" rows={5} value={gradingForm.gradeBands} onChange={setGradingField('gradeBands')} hint='Example: [{"letter":"A","min":80,"descriptor":"exceptional"},{"letter":"B","min":65,"descriptor":"outstanding"},{"letter":"C","min":50,"descriptor":"satisfactory"},{"letter":"D","min":35,"descriptor":"basic"},{"letter":"E","min":0,"descriptor":"elementary"}]' />
+              {grading && (
+                <p className="text-xs text-slate-400 mt-2">
+                  <span className="font-semibold">Current bands:</span> {' '}
+                  {(grading.gradeBands || []).map((b) => `${b.letter} ≥ ${b.min}`).join(' · ')}
+                  {grading.gradeBands?.some((b) => b.note) && <span className="text-amber-700 ml-2">⚠ Some bands are placeholders — VERIFY WITH UNEB</span>}
+                </p>
+              )}
+              {error && (
+                <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">{error}</div>
+              )}
+              <div className="flex items-center gap-3 pt-2">
+                <Button icon={Save} onClick={handleSaveGrading} loading={gradingSaving}>Save Grading Settings</Button>
+                {gradingSaved && <span className="text-emerald-600 text-sm font-medium">✓ Grading settings saved</span>}
+              </div>
+            </Card>
+          )}
           {error && (
             <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">{error}</div>
           )}
