@@ -1,4 +1,4 @@
-# 🏫 School Management System
+# 🏫 School Digital Reports System
 
 Enter marks, get reports.
 
