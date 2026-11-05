@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { GraduationCap, Users, Wallet, CalendarCheck, TrendingUp, ArrowRight } from 'lucide-react';
+import { GraduationCap, Users, Wallet, CalendarCheck, TrendingUp, ArrowRight, AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { getStudentCount } from '../../db/studentService.js';
@@ -7,6 +7,7 @@ import { getStaffCount }   from '../../db/staffService.js';
 import { getTermFeeCollection } from '../../db/feeService.js';
 import { getTodayStats }   from '../../db/attendanceService.js';
 import { getConfig }       from '../../db/configService.js';
+import { isEnabled, financeEnabled } from '../../utils/featureFlags.js';
 import { StatCard, Card, LoadingScreen } from '../../components/common/Badge.jsx';
 import { formatCurrency, getCurrentDateISO, formatDate } from '../../utils/grading.js';
 
@@ -42,11 +43,13 @@ const Dashboard = () => {
         setConfig(cfg);
         const [students, staff, feeTotal, attendance] = await Promise.all([
           getStudentCount(),
-          getStaffCount(),
-          hasRole('admin', 'bursar')
+          isEnabled('staff') ? getStaffCount() : Promise.resolve(null),
+          isEnabled('fees')
             ? getTermFeeCollection(cfg?.academicYear, cfg?.currentTerm)
             : Promise.resolve(null),
-          getTodayStats(getCurrentDateISO()),
+          isEnabled('attendance')
+            ? getTodayStats(getCurrentDateISO())
+            : Promise.resolve(null),
         ]);
         setStats({ students, staff, feeTotal, attendance });
       } catch (e) {
@@ -79,6 +82,23 @@ const Dashboard = () => {
         </div>
       </div>
 
+      {user?.role === 'bursar' && !financeEnabled && (
+        <Card className="bg-amber-50 border border-amber-200 rounded-xl">
+          <div className="flex items-start gap-3 p-4">
+            <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-amber-800">
+                No modules are enabled for your role yet
+              </p>
+              <p className="text-xs text-amber-700 mt-1">
+                Contact an administrator to enable finance modules (fees,
+                payroll, expenses) for bursar accounts.
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {/* Stat cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {hasRole('admin', 'teacher') && (
@@ -90,7 +110,7 @@ const Dashboard = () => {
             color="navy"
           />
         )}
-        {hasRole('admin') && (
+        {hasRole('admin') && isEnabled('staff') && (
           <StatCard
             title="Staff Members"
             value={stats?.staff ?? '—'}
@@ -99,7 +119,7 @@ const Dashboard = () => {
             color="blue"
           />
         )}
-        {hasRole('admin', 'bursar') && stats?.feeTotal !== null && (
+        {hasRole('admin', 'bursar') && isEnabled('fees') && stats?.feeTotal !== null && (
           <StatCard
             title="Fee Collection"
             value={formatCurrency(stats?.feeTotal)}
@@ -108,7 +128,7 @@ const Dashboard = () => {
             color="emerald"
           />
         )}
-        {hasRole('admin', 'teacher') && (
+        {hasRole('admin', 'teacher') && isEnabled('attendance') && (
           <StatCard
             title="Today's Attendance"
             value={stats?.attendance?.present ?? '—'}
@@ -128,16 +148,18 @@ const Dashboard = () => {
             {hasRole('admin', 'teacher') && (
               <>
                 <QuickLink icon={GraduationCap} label="Manage Students"  path="/students"  color="bg-navy-800"    />
-                <QuickLink icon={CalendarCheck} label="Mark Attendance"  path="/attendance" color="bg-amber-500"  />
+                {hasRole('admin', 'teacher') && isEnabled('attendance') && (
+                  <QuickLink icon={CalendarCheck} label="Mark Attendance"  path="/attendance" color="bg-amber-500"  />
+                )}
               </>
             )}
             {hasRole('admin', 'teacher') && (
               <QuickLink icon={TrendingUp} label="Exam Results" path="/exams" color="bg-blue-600" />
             )}
-            {hasRole('admin', 'bursar') && (
+            {hasRole('admin', 'bursar') && isEnabled('fees') && (
               <QuickLink icon={Wallet} label="Record Fee Payment" path="/fees" color="bg-emerald-600" />
             )}
-            {hasRole('admin') && (
+            {hasRole('admin') && isEnabled('staff') && (
               <QuickLink icon={Users} label="Manage Staff" path="/staff" color="bg-purple-600" />
             )}
           </div>

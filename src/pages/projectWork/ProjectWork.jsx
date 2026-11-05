@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Plus, Edit, Trash2, Save, RefreshCw } from 'lucide-react';
 import { getProjectWork, saveProjectWork, updateProjectWork, deleteProjectWork, ACHIEVEMENT_LEVELS } from '../../db/projectWorkService.js';
 import { getStudents } from '../../db/studentService.js';
 import { getConfig } from '../../db/configService.js';
 import { useAuth } from '../../contexts/AuthContext.jsx';
-import { CLASSES } from '../../utils/constants.js';
+import { CLASSES, STREAMS } from '../../utils/constants.js';
 import { generateAcademicYears } from '../../utils/grading.js';
 import Button from '../../components/common/Button.jsx';
 import Modal from '../../components/common/Modal.jsx';
@@ -31,7 +31,19 @@ export const ProjectWork = () => {
   const [editing, setEditing] = useState(null); // record id being edited
   const [form, setForm] = useState({ studentId: '', year: '', title: '', subjectOrArea: '', achievementLevel: 'A', assessorId: '', notes: '' });
   const [error, setError] = useState('');
+  const [classLevel, setClassLevel] = useState('');   // UI-only grouping aid, not saved
+  const [stream, setStream] = useState('');           // UI-only grouping aid, not saved
+  const [errors, setErrors] = useState({});           // inline field errors
+  const studentRef = useRef(null);
+  const titleRef = useRef(null);
+  const levelRef = useRef(null);
   const [saved, setSaved] = useState(false);
+
+  // Set a form field and clear any inline error for that field as soon as it is corrected.
+  const set = (f) => (e) => {
+    setForm((p) => ({ ...p, [f]: e.target.value }));
+    if (errors[f]) setErrors((prev) => ({ ...prev, [f]: '' }));
+  };
 
   const years = generateAcademicYears();
 
@@ -64,15 +76,37 @@ export const ProjectWork = () => {
   useEffect(() => { loadRecords(); }, [loadRecords]);
 
   const studentById = (id) => students.find((s) => s.id === id) || {};
+
+  // Students filterable by the UI-only class/stream grouping aids (not saved to the record).
+  const classStudents = useMemo(() => {
+    return students.filter((s) => {
+      if (s.classLevel !== classLevel) return false;
+      if (stream && s.stream !== stream) return false;
+      return true;
+    });
+  }, [students, classLevel, stream]);
+
+  // NOTE: generateAcademicYears() currently returns range years (e.g. "2026/2027").
+  // Once the academic-year step is implemented, switch this to single-year
+  // values (2026 onward) per the scope requirement.
   const yearOptions = [...new Set([...records.map((r) => r.year), ...(config ? [config.academicYear] : []), ...years])];
 
-  const resetForm = () => setForm({ studentId: '', year: config?.academicYear || '', title: '', subjectOrArea: '', achievementLevel: 'A', assessorId: user?.id || '', notes: '' });
+  const resetForm = () => {
+    setForm({ studentId: '', year: config?.academicYear || yearOptions[0] || '', title: '', subjectOrArea: '', achievementLevel: 'A', assessorId: user?.id || '', notes: '' });
+    setClassLevel('');
+    setStream('');
+    setErrors({});
+  };
 
   const handleOpen = (record = null) => {
     setError('');
     setSaved(false);
+    setErrors({});
     if (record) {
+      const s = students.find((st) => st.id === record.studentId) || {};
       setEditing(record.id);
+      setClassLevel(s.classLevel || '');
+      setStream(s.stream || '');
       setForm({
         studentId: record.studentId || '',
         year: record.year || '',
@@ -91,9 +125,17 @@ export const ProjectWork = () => {
 
   const handleSave = async (e) => {
     e.preventDefault();
-    if (!form.studentId) { setError('Select a student.'); return; }
-    if (!form.title.trim()) { setError('Project title is required.'); return; }
-    if (!ACHIEVEMENT_LEVELS.includes(form.achievementLevel)) { setError('Select an achievement level.'); return; }
+    const next = {};
+    if (!form.studentId) next.studentId = 'Select a student.';
+    if (!form.title.trim()) next.title = 'Project title is required.';
+    if (!ACHIEVEMENT_LEVELS.includes(form.achievementLevel)) next.achievementLevel = 'Select an achievement level.';
+    setErrors(next);
+    if (Object.keys(next).length > 0) {
+      if (studentRef.current) studentRef.current.focus();
+      else if (titleRef.current) titleRef.current.focus();
+      else if (levelRef.current) levelRef.current.focus();
+      return;
+    }
     setSaving(true);
     try {
       const data = {
@@ -200,24 +242,144 @@ export const ProjectWork = () => {
             <Button onClick={handleSave} loading={saving} icon={Save}>{editing ? 'Update' : 'Save'}</Button>
           </>
         }>
-        <form onSubmit={handleSave} className="space-y-4">
-          <FormRow>
-            <Select label="Student *" required value={form.studentId} onChange={(e) => setForm((p) => ({ ...p, studentId: e.target.value }))} placeholder="Select student">
-              {students.map((s) => <option key={s.id} value={s.id}>{s.fullName} ({s.admissionNumber})</option>)}
+        <form onSubmit={handleSave} className="space-y-6">
+          {/* ── Section: Student & Subject ── */}
+          <div className="space-y-4">
+            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Student &amp; Subject</h3>
+            <Select
+              label="Class *"
+              required
+              value={classLevel}
+              onChange={(e) => {
+                setClassLevel(e.target.value);
+                setStream('');
+                setForm((p) => ({ ...p, studentId: '' }));
+                setErrors((prev) => ({ ...prev, studentId: '' }));
+              }}
+              placeholder="Select class"
+            >
+              {CLASSES.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
             </Select>
-            <Select label="Academic Year *" required value={form.year} onChange={(e) => setForm((p) => ({ ...p, year: e.target.value }))}>
-              {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
-            </Select>
-          </FormRow>
-          <Input label="Project Title *" required value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))} placeholder="e.g. Community sanitation project" />
-          <Input label="Subject / Learning Area" value={form.subjectOrArea} onChange={(e) => setForm((p) => ({ ...p, subjectOrArea: e.target.value }))} placeholder="e.g. Integrated Science" />
-          <FormRow>
-            <Select label="Achievement Level *" required value={form.achievementLevel} onChange={(e) => setForm((p) => ({ ...p, achievementLevel: e.target.value }))}>
-              {ACHIEVEMENT_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
-            </Select>
-            <Input label="Assessor (staff/user id)" value={form.assessorId} onChange={(e) => setForm((p) => ({ ...p, assessorId: e.target.value }))} />
-          </FormRow>
-          <Textarea label="Notes" value={form.notes} onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))} rows={2} />
+            {classLevel && (
+              <FormRow>
+                <Select
+                  label="Stream"
+                  value={stream}
+                  onChange={setStream}
+                  placeholder="Select stream"
+                >
+                  {STREAMS.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </Select>
+                <Select
+                  label="Academic Year *"
+                  required
+                  value={form.year}
+                  onChange={set('year')}
+                  placeholder="Select year"
+                >
+                  {yearOptions.map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </Select>
+              </FormRow>
+            )}
+            {!classLevel && (
+              <div className="px-3 py-2 rounded-lg bg-slate-50 border border-slate-100">
+                <p className="text-xs text-slate-500">
+                  Pick a class above to see and choose students.
+                </p>
+              </div>
+            )}
+            {classLevel && (
+              <>
+                <Select
+                  ref={studentRef}
+                  label="Student *"
+                  required
+                  value={form.studentId}
+                  onChange={set('studentId')}
+                  error={errors.studentId}
+                  placeholder="Select student"
+                >
+                  {classStudents.length === 0 ? (
+                    <option value="" disabled>
+                      No students found in this class{stream ? ` / stream ${stream}` : ''}
+                    </option>
+                  ) : (
+                    classStudents.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.fullName} — {s.schoolpayCode || s.admissionNumber || '—'}
+                      </option>
+                    ))
+                  )}
+                </Select>
+              </>
+            )}
+          </div>
+
+          {/* ── Section: Project Details ── */}
+          <div className="space-y-4">
+            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Project Details</h3>
+            <Input
+              ref={titleRef}
+              label="Project Title *"
+              required
+              value={form.title}
+              onChange={set('title')}
+              error={errors.title}
+              hint={errors.title ? undefined : 'e.g. Community sanitation project'}
+              placeholder="e.g. Community sanitation project"
+            />
+            <Input
+              label="Subject / Learning Area"
+              value={form.subjectOrArea}
+              onChange={set('subjectOrArea')}
+              hint="e.g. Integrated Science"
+              placeholder="e.g. Integrated Science"
+            />
+          </div>
+
+          {/* ── Section: Scoring ── */}
+          <div className="space-y-4">
+            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Scoring</h3>
+            <p className="text-xs text-slate-400">
+              Competence level{' '}
+              <span className="font-medium">{ACHIEVEMENT_LEVELS.join(' · ')}</span>
+              {ACHIEVEMENT_LEVELS.length === 5 && ' (A = exceptional … E = elementary)'}
+            </p>
+            <FormRow>
+              <Select
+                ref={levelRef}
+                label="Achievement Level *"
+                required
+                value={form.achievementLevel}
+                onChange={set('achievementLevel')}
+                error={errors.achievementLevel}
+              >
+                {ACHIEVEMENT_LEVELS.map((l) => (
+                  <option key={l} value={l}>{l}</option>
+                ))}
+              </Select>
+              <Input
+                label="Assessor (staff/user id)"
+                value={form.assessorId}
+                onChange={set('assessorId')}
+                hint="Staff or user ID who assessed the project"
+                placeholder="Staff or user ID"
+              />
+            </FormRow>
+            <Textarea
+              label="Notes"
+              value={form.notes}
+              onChange={set('notes')}
+              rows={2}
+              placeholder="Any remarks…"
+            />
+          </div>
         </form>
       </Modal>
     </div>

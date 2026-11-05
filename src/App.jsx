@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext.jsx';
 import { isSetupComplete, getConfig } from './db/configService.js';
 import RoleGuard from './guards/RoleGuard.jsx';
+import { isEnabled } from './utils/featureFlags.js';
 import AppLayout from './components/layout/AppLayout.jsx';
 import SetupWizard from './pages/setup/SetupWizard.jsx';
 import Login from './pages/auth/Login.jsx';
@@ -19,6 +20,15 @@ import ProjectWork from './pages/projectWork/ProjectWork.jsx';
 import { LoadingScreen } from './components/common/Badge.jsx';
 import './index.css';
 
+// ─── Feature-gated route ────────────────────────────────────────────────
+// Renders children only when the feature flag is on; otherwise redirects to
+// the dashboard (never a blank page). Placed outside RoleGuard so a disabled
+// feature redirects before any role/access check runs.
+const FeatureRoute = ({ feature, children }) => {
+  if (!isEnabled(feature)) return <Navigate to="/" replace />;
+  return children;
+};
+
 // ─── Inner app (needs auth context) ──────────────────────────────────────────
 const AppRoutes = ({ setupDone, schoolName, onSetupComplete }) => {
   const { user, loading } = useAuth();
@@ -33,22 +43,22 @@ const AppRoutes = ({ setupDone, schoolName, onSetupComplete }) => {
         <Route index element={<Dashboard />} />
 
         {/* Academic — Admin + Teacher */}
-        <Route path="students"   element={<RoleGuard roles={['admin','teacher']}><Students /></RoleGuard>} />
-        <Route path="students/import" element={<RoleGuard roles={['admin']}><ImportStudents /></RoleGuard>} />
-        <Route path="attendance" element={<RoleGuard roles={['admin','teacher']}><Attendance /></RoleGuard>} />
-        <Route path="exams"      element={<RoleGuard roles={['admin','teacher']}><Exams /></RoleGuard>} />
+        <Route path="students" element={<FeatureRoute feature="students"><RoleGuard roles={['admin','teacher']}><Students /></RoleGuard></FeatureRoute>} />
+        <Route path="students/import" element={<FeatureRoute feature="studentImport"><RoleGuard roles={['admin']}><ImportStudents /></RoleGuard></FeatureRoute>} />
+        <Route path="attendance" element={<FeatureRoute feature="attendance"><RoleGuard roles={['admin','teacher']}><Attendance /></RoleGuard></FeatureRoute>} />
+        <Route path="exams" element={<FeatureRoute feature="exams"><RoleGuard roles={['admin','teacher']}><Exams /></RoleGuard></FeatureRoute>} />
 
-        {/* Finance — Admin + Bursar */}
-        <Route path="fees"     element={<RoleGuard roles={['admin','bursar']}><Fees /></RoleGuard>} />
-        <Route path="payroll"  element={<RoleGuard roles={['admin','bursar']}><Payroll /></RoleGuard>} />
-        <Route path="expenses" element={<RoleGuard roles={['admin','bursar']}><Expenses /></RoleGuard>} />
+        {/* Finance — Admin + Bursar (hidden by default) */}
+        <Route path="fees" element={<FeatureRoute feature="fees"><RoleGuard roles={['admin','bursar']}><Fees /></RoleGuard></FeatureRoute>} />
+        <Route path="payroll" element={<FeatureRoute feature="payroll"><RoleGuard roles={['admin','bursar']}><Payroll /></RoleGuard></FeatureRoute>} />
+        <Route path="expenses" element={<FeatureRoute feature="expenses"><RoleGuard roles={['admin','bursar']}><Expenses /></RoleGuard></FeatureRoute>} />
 
         {/* Admin only */}
-        <Route path="staff"    element={<RoleGuard roles={['admin']}><Staff /></RoleGuard>} />
-        <Route path="users"    element={<RoleGuard roles={['admin']}><UserManagement /></RoleGuard>} />
-        <Route path="settings"  element={<RoleGuard roles={['admin']}><Settings /></RoleGuard>} />
-        <Route path="subjects"  element={<RoleGuard roles={['admin']}><Subjects /></RoleGuard>} />
-        <Route path="project-work" element={<RoleGuard roles={['admin','teacher']}><ProjectWork /></RoleGuard>} />
+        <Route path="staff" element={<FeatureRoute feature="staff"><RoleGuard roles={['admin']}><Staff /></RoleGuard></FeatureRoute>} />
+        <Route path="users" element={<FeatureRoute feature="userAccounts"><RoleGuard roles={['admin']}><UserManagement /></RoleGuard></FeatureRoute>} />
+        <Route path="settings" element={<FeatureRoute feature="settings"><RoleGuard roles={['admin']}><Settings /></RoleGuard></FeatureRoute>} />
+        <Route path="subjects" element={<FeatureRoute feature="subjects"><RoleGuard roles={['admin']}><Subjects /></RoleGuard></FeatureRoute>} />
+        <Route path="project-work" element={<FeatureRoute feature="projectWork"><RoleGuard roles={['admin','teacher']}><ProjectWork /></RoleGuard></FeatureRoute>} />
 
         {/* Catch-all */}
         <Route path="*" element={<Navigate to="/" replace />} />

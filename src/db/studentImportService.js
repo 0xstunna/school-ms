@@ -80,8 +80,10 @@ export function normalizeCode(value) {
 }
 
 // ── Parse a CSV or Excel file into {headers, rows} ──
-export async function parseFile(file) {
-  const XLSX = await getXLSX();
+// `deps.XLSX` allows injecting a mock SheetJS implementation for unit testing.
+export async function parseFile(file, deps = {}) {
+  const { XLSX: injectedXLSX } = deps;
+  const XLSX = injectedXLSX || await getXLSX();
   const arrayBuffer = await file.arrayBuffer();
   const workbook = XLSX.read(arrayBuffer, {type: 'array'});
   const sheetName = workbook.SheetNames[0];

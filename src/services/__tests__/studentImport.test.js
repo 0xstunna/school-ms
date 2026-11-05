@@ -21,7 +21,10 @@ import {
   classifyRows,
   findStudentsToInactivate,
   commitImport,
+  parseFile,
 } from '../../db/studentImportService.js';
+
+import fs from 'fs';
 
 // ── Helpers ──
 let counter = 0;
@@ -312,6 +315,73 @@ assert.strictEqual(batchSetCalls, 1, '1 set call for link');
 assert.strictEqual(lastSetData.schoolpayCode, 'SP003', 'link sets schoolpayCode');
 assert.strictEqual(lastSetData.source, 'schoolpay', 'link sets source');
 console.log('  commitImport (link: sets schoolpayCode on existing doc): PASS');
+
+// ── parseFile ── (requires a SheetJS-like implementation; injected via deps)
+console.log('--- parseFile ---');
+
+const mockXLSX = (data) => ({
+  read: () => ({ SheetNames: ['Sheet1'], Sheets: { Sheet1: {} } }),
+  utils: { sheet_to_json: () => data },
+});
+
+// CSV with leading-zero codes: codes must survive as strings (not numbers)
+const csvRows = [
+  ['SchoolPay Code', 'Full Name', 'Class Level', 'Admission Number'],
+  ['00123', 'Alice Mwangi', 'S1', 'ADM001'],
+  ['SP002', 'Bob Okello', 'S2', 'ADM002'],
+];
+const csvFile = new File([JSON.stringify(csvRows)], 'students.csv', {
+  type: 'text/csv',
+});
+const { headers, rows: parsed } = await parseFile(csvFile, {
+  XLSX: mockXLSX(csvRows),
+});
+assert.strictEqual(headers[0], 'SchoolPay Code', 'header row detected');
+assert.strictEqual(parsed.length, 2, 'two data rows parsed');
+assert.strictEqual(parsed[0]['SchoolPay Code'], '00123', 'leading-zero code preserved as string');
+assert.strictEqual(parsed[0]['Full Name'], 'Alice Mwangi', 'full name parsed');
+assert.strictEqual(parsed[1]['SchoolPay Code'], 'SP002', 'regular code parsed');
+console.log('  parseFile (CSV with leading-zero codes): PASS');
+
+// Empty file: no header row → empty result (UI converts to a visible error)
+const emptyFile = new File([], 'empty.csv', { type: 'text/csv' });
+const { headers: eHeaders, rows: eRows } = await parseFile(emptyFile, {
+  XLSX: mockXLSX([]),
+});
+assert.strictEqual(eHeaders.length, 0, 'empty file yields no headers');
+assert.strictEqual(eRows.length, 0, 'empty file yields no rows');
+console.log('  parseFile (empty file): PASS');
+
+// Header-only sheet (data.length < 2) → empty result
+const headerOnly = [['SchoolPay Code', 'Full Name']];
+const headerOnlyFile = new File([JSON.stringify(headerOnly)], 'header.csv', {
+  type: 'text/csv',
+});
+const { headers: hHeaders, rows: hRows } = await parseFile(headerOnlyFile, {
+  XLSX: mockXLSX(headerOnly),
+});
+assert.strictEqual(hHeaders.length, 0, 'header-only sheet yields no headers');
+assert.strictEqual(hRows.length, 0, 'header-only sheet yields no rows');
+console.log('  parseFile (header-only sheet): PASS');
+
+// Numeric cell in .xlsx: Excel may store codes as numbers. cellToText converts
+// numbers to strings without crashing. Leading zeros already lost by Excel
+// (when it stores the cell as a number) cannot be recovered — that is an Excel
+// limitation, not a code bug. Codes stored as text ("00123") preserve leading zeros.
+const numericRows = [
+  ['SchoolPay Code', 'Full Name', 'Class Level', 'Admission Number'],
+  [123, 'Alice Mwangi', 'S1', 'ADM001'],
+  ['SP002', 'Bob Okello', 'S2', 'ADM002'],
+];
+const numericFile = new File([JSON.stringify(numericRows)], 'numeric.xlsx', {
+  type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+});
+const { rows: numParsed } = await parseFile(numericFile, {
+  XLSX: mockXLSX(numericRows),
+});
+assert.strictEqual(numParsed[0]['SchoolPay Code'], '123', 'numeric cell converted to string');
+assert.strictEqual(numParsed[1]['SchoolPay Code'], 'SP002', 'string cell preserved');
+console.log('  parseFile (numeric cell): PASS');
 
 console.log('\n=== ALL STUDENT IMPORT TESTS PASSED ===');
 process.exit(0);

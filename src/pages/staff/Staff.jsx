@@ -1010,7 +1010,13 @@ export const Settings = () => {
             <h4 className="text-sm font-semibold text-slate-700 mb-3">Academic Period</h4>
             <FormRow>
               <Select label="Academic Year" value={form.academicYear} onChange={set('academicYear')}>
-                {years.map((y) => <option key={y} value={y}>{y}</option>)}
+                {(() => {
+                  const extra = config?.academicYear && !years.includes(config.academicYear)
+                    ? [config.academicYear] : [];
+                  return [...years, ...extra];
+                })().map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
               </Select>
               <Select label="Current Term" value={form.currentTerm} onChange={set('currentTerm')}>
                 {TERMS.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -1034,6 +1040,10 @@ export const Settings = () => {
                 <Input label="Exam weight (%)" type="number" value={gradingForm.examWeight} onChange={setGradingField('examWeight')} />
                 <Input label="Min subjects at D+ for certificate" type="number" value={gradingForm.minSubjectsAtDOrAbove} onChange={setGradingField('minSubjectsAtDOrAbove')} />
               </div>
+              <p className="text-xs text-amber-600 mb-4">
+                ⚠ CA weight (default 20%) and exam weight (default 80%) are
+                placeholders — verify against UNEB guidance before go-live.
+              </p>
               <Textarea label="Grade bands (JSON — sorted high→low by min)" rows={5} value={gradingForm.gradeBands} onChange={setGradingField('gradeBands')} hint='Example: [{"letter":"A","min":80,"descriptor":"exceptional"},{"letter":"B","min":65,"descriptor":"outstanding"},{"letter":"C","min":50,"descriptor":"satisfactory"},{"letter":"D","min":35,"descriptor":"basic"},{"letter":"E","min":0,"descriptor":"elementary"}]' />
               {grading && (
                 <p className="text-xs text-slate-400 mt-2">

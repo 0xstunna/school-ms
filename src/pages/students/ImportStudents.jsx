@@ -44,6 +44,7 @@ const ImportStudents = () => {
   const [inactivationCount, setInactivationCount] = useState(0);
   const [commitResult, setCommitResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [parsing, setParsing] = useState(false);
   const [error, setError] = useState('');
 
   // ── Auto-map headers to fields by name similarity ────────────────────────
@@ -82,6 +83,16 @@ const ImportStudents = () => {
 
   const requiredFieldsMissing = FIELDS.filter((f) => f.required).some((f) => !mapping[f.key]);
 
+  // ── Effective ready count AFTER fixes and skips are applied ────────────────
+  // Keeps the preview "Ready" count in sync with the confirm-screen total
+  // (classified.counts.total) so the numbers match end to end.
+  const effectiveReadyCount = useMemo(() => {
+    const fixed = applyFixes(normalizedRows);
+    const filtered = fixed.filter((_, i) => !skipped.has(i));
+    const { ready } = validateRows(filtered, new Map(), CLASSES);
+    return ready.length;
+  }, [normalizedRows, fixes, skipped, applyFixes]);
+
   const applyFixes = useCallback((rs) => {
     return rs.map((r, i) => {
       const fix = fixes[i];
@@ -107,8 +118,15 @@ const ImportStudents = () => {
     setFileName(f.name);
     setError('');
     setStage('upload');
+    setParsing(true);
     try {
       const { headers: hs, rows: rs } = await parseFile(f);
+      if (!hs || hs.length === 0) {
+        setError('The file appears to be empty. Please upload a CSV or Excel file with a header row.');
+        setParsing(false);
+        resetFileInput();
+        return;
+      }
       setHeaders(hs);
       setRows(rs);
       setFixes({});
@@ -117,7 +135,16 @@ const ImportStudents = () => {
       setStage('mapping');
     } catch (e) {
       setError(`Failed to parse file: ${e.message}`);
+    } finally {
+      setParsing(false);
+      resetFileInput();
     }
+  };
+
+  // Reset the native input so the same file can be picked again (onChange only
+  // fires when the value actually changes).
+  const resetFileInput = () => {
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const removeFile = () => {
@@ -162,6 +189,19 @@ const ImportStudents = () => {
     try {
       const students = await getStudents();
       setAllStudents(students);
+
+      // Pre-classify ready rows so link rows can be shown and skipped on preview.
+      // This lets an admin spot and skip a wrong admission-number / name+class match
+      // before the confirm screen.
+      if (ready.length > 0) {
+        const matched = matchExisting([...ready], students);
+        const codeMap = new Map(
+          students.filter((s) => s.schoolpayCode).map((s) => [s.schoolpayCode, s])
+        );
+        const { categories, counts } = classifyRows(matched, codeMap);
+        setClassified({ categories, counts });
+      }
+
       setStage('preview');
     } catch (e) {
       setError(`Failed to load existing students: ${e.message}`);
@@ -295,7 +335,10 @@ const ImportStudents = () => {
                 Supports .csv, .xlsx, .xls · SchoolPay-owned fields are
                 overwritten; school-owned fields are never touched.
               </p>
-              <label className="cursor-pointer">
+              <label
+                className="cursor-pointer"
+                onClick={() => fileInputRef.current?.click()}
+              >
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -303,12 +346,14 @@ const ImportStudents = () => {
                   onChange={handleFileChange}
                   className="hidden"
                 />
-                <Button>Select File</Button>
+                <Button disabled={parsing || loading}>
+                  {parsing ? 'Reading file…' : 'Select File'}
+                </Button>
               </label>
               {file && (
                 <div className="mt-4 flex items-center gap-2 text-xs text-slate-500">
                   <FileText className="w-3 h-3" />
-                  <span>{fileName}</span>
+                  <span title={fileName}>{fileName}</span>
                   <Button variant="ghost" size="sm" onClick={removeFile}>Remove</Button>
                 </div>
               )}
@@ -408,7 +453,7 @@ const ImportStudents = () => {
             <StatCard title="Total Rows" value={rows.length} icon={FileText} color="navy" />
             <StatCard
               title="Ready"
-              value={validation.ready.length}
+              value={effectiveReadyCount}
               icon={CheckCircle2}
               color="emerald"
             />
@@ -485,6 +530,78 @@ const ImportStudents = () => {
                               onClick={() => toggleSkip(p.rowIndex)}
                             >
                               Skip Row
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
+
+          {/* Link rows to existing students — skippable before commit */}
+          {classified?.categories.link?.length > 0 && (
+            <Card className="border-blue-100 bg-blue-50">
+              <h3 className="font-display font-semibold text-slate-800 mb-4">
+                Rows to Link to Existing Students
+              </h3>
+              <p className="text-sm text-slate-500 mb-4">
+                These existing students will be matched to SchoolPay codes. Skip
+                any match that looks wrong.
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b-2 border-slate-100">
+                      <th className="text-left py-2.5 px-3 text-xs font-semibold text-slate-500 uppercase">
+                        Row
+                      </th>
+                      <th className="text-left py-2.5 px-3 text-xs font-semibold text-slate-500 uppercase">
+                        Full Name
+                      </th>
+                      <th className="text-left py-2.5 px-3 text-xs font-semibold text-slate-500 uppercase">
+                        Class
+                      </th>
+                      <th className="text-left py-2.5 px-3 text-xs font-semibold text-slate-500 uppercase">
+                        Match Method
+                      </th>
+                      <th className="text-left py-2.5 px-3 text-xs font-semibold text-slate-500 uppercase">
+                        SchoolPay Code
+                      </th>
+                      <th className="text-left py-2.5 px-3 text-xs font-semibold text-slate-500 uppercase">
+                        Action
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {classified.categories.link.map((item) => {
+                      const isSkipped = skipped.has(item.rowIndex);
+                      return (
+                        <tr key={item.rowIndex}>
+                          <td className="py-3 px-3 text-sm font-mono text-slate-500">
+                            {item.rowIndex + 1}
+                          </td>
+                          <td className="py-3 px-3 text-sm text-slate-700">
+                            {item.fullName}
+                          </td>
+                          <td className="py-3 px-3 text-sm text-slate-500">
+                            {item.classLevel}
+                          </td>
+                          <td className="py-3 px-3 text-sm text-slate-500">
+                            {item.matchMethod}
+                          </td>
+                          <td className="py-3 px-3 text-sm font-mono text-slate-700">
+                            {item.code}
+                          </td>
+                          <td className="py-3 px-3">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => toggleSkip(item.rowIndex)}
+                            >
+                              {isSkipped ? 'Undo Skip' : 'Skip Row'}
                             </Button>
                           </td>
                         </tr>

@@ -5,7 +5,8 @@ import {
   ChevronRight, LogOut, School, BookMarked, Upload,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext.jsx';
-import { NAV_ITEMS, ROLE_LABELS } from '../../utils/constants.js';
+import { ROLE_LABELS } from '../../utils/constants.js';
+import { getVisibleNavItems } from '../../utils/featureFlags.js';
 
 const ICONS = {
   LayoutDashboard, GraduationCap, ClipboardList, BookOpen,
@@ -16,9 +17,7 @@ const Sidebar = ({ onLogout }) => {
   const { user } = useAuth();
   const location = useLocation();
 
-  const visibleItems = NAV_ITEMS.filter((item) =>
-    item.roles?.includes(user?.role)
-  );
+  const visibleItems = getVisibleNavItems(user?.role);
 
   return (
     <aside className="w-60 min-h-screen bg-navy-950 flex flex-col select-none">

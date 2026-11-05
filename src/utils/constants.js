@@ -62,6 +62,7 @@ export const NAV_ITEMS = [
     label: 'Dashboard',
     path: '/',
     icon: 'LayoutDashboard',
+    feature: 'dashboard',
     roles: ['admin', 'teacher', 'bursar'],
   },
   { type: 'divider', label: 'Academic', roles: ['admin', 'teacher'] },
@@ -70,6 +71,7 @@ export const NAV_ITEMS = [
     label: 'Students',
     path: '/students',
     icon: 'GraduationCap',
+    feature: 'students',
     roles: ['admin', 'teacher'],
   },
   {
@@ -77,6 +79,7 @@ export const NAV_ITEMS = [
     label: 'Import Students',
     path: '/students/import',
     icon: 'Upload',
+    feature: 'studentImport',
     roles: ['admin'],
   },
   {
@@ -84,6 +87,7 @@ export const NAV_ITEMS = [
     label: 'Attendance',
     path: '/attendance',
     icon: 'ClipboardList',
+    feature: 'attendance',
     roles: ['admin', 'teacher'],
   },
   {
@@ -91,6 +95,7 @@ export const NAV_ITEMS = [
     label: 'Exams & Results',
     path: '/exams',
     icon: 'BookOpen',
+    feature: 'exams',
     roles: ['admin', 'teacher'],
   },
   { type: 'divider', label: 'Finance', roles: ['admin', 'bursar'] },
@@ -99,6 +104,7 @@ export const NAV_ITEMS = [
     label: 'Fees',
     path: '/fees',
     icon: 'Wallet',
+    feature: 'fees',
     roles: ['admin', 'bursar'],
   },
   {
@@ -106,6 +112,7 @@ export const NAV_ITEMS = [
     label: 'Payroll',
     path: '/payroll',
     icon: 'Banknote',
+    feature: 'payroll',
     roles: ['admin', 'bursar'],
   },
   {
@@ -113,6 +120,7 @@ export const NAV_ITEMS = [
     label: 'Expenses',
     path: '/expenses',
     icon: 'Receipt',
+    feature: 'expenses',
     roles: ['admin', 'bursar'],
   },
   { type: 'divider', label: 'Administration', roles: ['admin'] },
@@ -121,6 +129,7 @@ export const NAV_ITEMS = [
     label: 'Staff',
     path: '/staff',
     icon: 'Users',
+    feature: 'staff',
     roles: ['admin'],
   },
   {
@@ -128,6 +137,7 @@ export const NAV_ITEMS = [
     label: 'Subjects',
     path: '/subjects',
     icon: 'BookMarked',
+    feature: 'subjects',
     roles: ['admin'],
   },
   {
@@ -135,6 +145,7 @@ export const NAV_ITEMS = [
     label: 'Project Work',
     path: '/project-work',
     icon: 'ClipboardList',
+    feature: 'projectWork',
     roles: ['admin', 'teacher'],
   },
   {
@@ -142,6 +153,7 @@ export const NAV_ITEMS = [
     label: 'User Accounts',
     path: '/users',
     icon: 'ShieldCheck',
+    feature: 'userAccounts',
     roles: ['admin'],
   },
   {
@@ -149,6 +161,7 @@ export const NAV_ITEMS = [
     label: 'Settings',
     path: '/settings',
     icon: 'Settings',
+    feature: 'settings',
     roles: ['admin'],
   },
 ];

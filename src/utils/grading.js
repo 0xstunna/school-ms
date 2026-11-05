@@ -43,10 +43,11 @@ export const formatDate = (dateVal) => {
 export const getCurrentDateISO = () => new Date().toISOString().split('T')[0];
 
 export const generateAcademicYears = () => {
-  const year = new Date().getFullYear();
-  return [
-    `${year - 1}/${year}`,
-    `${year}/${year + 1}`,
-    `${year + 1}/${year + 2}`,
-  ];
+  // Academic years are single years from 2026 onward (not ranges like "2026/2027").
+  // Always start at 2026 so earlier years stay selectable; run through currentYear + 3.
+  const start = 2026;
+  const end = new Date().getFullYear() + 3;
+  const years = [];
+  for (let y = start; y <= end; y++) years.push(String(y));
+  return years;
 };

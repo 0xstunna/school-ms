@@ -4,6 +4,7 @@ import { getUsers, createUser, updateUser, deactivateUser, activateUser, countAd
 import { ROLES, ROLE_LABELS, ROLE_COLORS } from '../../utils/constants.js';
 import { formatDate } from '../../utils/grading.js';
 import { useAuth } from '../../contexts/AuthContext.jsx';
+import { isEnabled, financeEnabled } from '../../utils/featureFlags.js';
 import Button from '../../components/common/Button.jsx';
 import Modal, { ConfirmModal } from '../../components/common/Modal.jsx';
 import { Input, Select, FormRow } from '../../components/common/Input.jsx';
@@ -77,9 +78,11 @@ const UserModal = ({ open, onClose, onSave, existing }) => {
         <Input label="Email Address" required type="email" placeholder="user@school.com"
           value={form.email} onChange={set('email')} />
         <Select label="Role" required value={form.role} onChange={set('role')}>
-          {Object.entries(ROLES).map(([, v]) => (
-            <option key={v} value={v}>{ROLE_LABELS[v]}</option>
-          ))}
+          {Object.entries(ROLES)
+            .filter(([, v]) => !(v === 'bursar' && !financeEnabled))
+            .map(([, v]) => (
+              <option key={v} value={v}>{ROLE_LABELS[v]}</option>
+            ))}
         </Select>
 
         {!isEdit && (
