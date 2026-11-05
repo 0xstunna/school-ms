@@ -1,74 +1,75 @@
 # 🏫 School Management System
 
-A desktop app that helps Ugandan secondary schools (S1–S6) run their academics —
-students, attendance, exams, grading, fees, payroll, expenses, and report cards
-— all in one place, on the school's own computer.
+Enter marks, get reports.
 
-## Why schools need this
+A desktop app for Ugandan secondary schools (S1–S6) that turns exam and CA marks
+into report cards, broadsheets, and fee statements — supporting both the legacy
+UCE grading and the new UNEB competence-based (NLSC) model at the same time.
 
-**The curriculum is changing, but your records shouldn't break.**
-Uganda's New Lower Secondary Curriculum (NLSC) replaces the old UCE aggregate/division
-model with competence-based grading (CA + exam, letter bands A–E, no division).
-But S5–S6 and older classes still run on legacy UCE. Most school software forces
-you to pick one. This app runs both side by side, class by class — legacy classes
-keep working exactly as before, while current-year S1–S4 move to NLSC.
+## The core loop
 
-**Student enrolment is stuck in SchoolPay.**
-Schools admit students through SchoolPay, but re-typing every name, class, and
-code by hand is slow and error-prone. Upload a SchoolPay export (CSV or Excel),
-map the columns once, preview exactly what will change — new students, updates,
-links to existing records, class changes — and commit in one batch. SchoolPay
-fields come from the file; school-owned fields (stream, guardian, notes, marks)
-are never overwritten.
+1. **Enter marks** — Teachers record CATs, midterms, and finals per subject.
+2. **Generate reports** — One click produces report cards and class broadsheets,
+   computed under the right grading model for each class.
+3. **Get paid** — Bursar records fee payments and prints receipts.
 
-**Everything lives in spreadsheets and paper.**
-One app for student registers, daily attendance, exam marks, fee structures and
-payments, staff payroll, expenses, and printable report cards/broadsheets.
-No more reconciling five different Excel files at end of term.
+Everything else (students, attendance, staff, payroll, expenses) exists to
+support that loop.
 
-**Staff need different levels of access.**
-Admins see everything. Teachers see students, attendance, and exams. Bursars see
-fees, payroll, and expenses — nothing more. Role-based sidebar keeps each person
-in their lane.
+## Two grading models, side by side
 
-## What it does
+Uganda's New Lower Secondary Curriculum (NLSC) replaces the old UCE
+aggregate/division model for current-year S1–S4 — but S5–S6 and older classes
+still run on legacy UCE. Most school software makes you choose. This app runs
+both:
 
-### Two grading models, one app
 - **LEGACY (UCE)** — aggregate/division model for older classes. Historical marks
   and grades are never touched.
-- **NLSC (UNEB competence-based)** — CA × weight + exam × weight, letter grades
-  A–E with descriptors, no aggregate/division, project work as a standalone line
-  on report cards, certificate eligibility (subjects at D or above).
-- Choose per class. Migrate when you're ready; keep legacy running until then.
+- **NLSC (competence-based)** — CA × weight + exam × weight, letter grades A–E
+  with descriptors, no aggregate/division, project work as a standalone line on
+  report cards, certificate eligibility (subjects at D or above).
 
-### SchoolPay-driven student import
-Upload a SchoolPay export, map columns (saved for reuse), preview new/updated/
-linked/class-changed rows with counts, fix or skip problem rows, commit via
-batched Firestore writes (max 500 per batch). Students absent from an import can
-be marked inactive — nothing is ever deleted.
+Pick per class. Migrate when ready; legacy keeps working until then.
 
-### Reporting
-Print report cards and class broadsheets for both grading models. SchoolPay codes
-appear on report cards and student lists so payments and records stay aligned.
+## SchoolPay-driven student import
 
-### Roles
-- **Admin** — everything: students, staff, users, settings, imports, fees, payroll
-- **Teacher** — dashboard, students, attendance, exams & results
-- **Bursar** — dashboard, fees, payroll, expenses
+Admission runs through SchoolPay. Instead of re-typing students, upload a
+SchoolPay export (CSV or Excel), map the columns (saved for reuse), preview exactly
+what will change — new students, updates, links to existing records, class
+changes — and commit in one batch. SchoolPay fields (code, name, class) come
+from the file; school-owned fields (stream, guardian, notes, marks) are never
+overwritten. Students absent from an import can be marked inactive — nothing is
+ever deleted.
+
+## Reports that matter
+
+- **Report cards** — per student, per term, with grades, positions, and remarks
+  (legacy) or letters + subjects at D or above + certificate status (NLSC).
+- **Class broadsheets** — the whole class on one page, with SchoolPay codes so
+  finance and records stay aligned.
+- **NLSC report cards** include project work as a separate line.
+
+## Who sees what
+
+| Role | Access |
+|------|--------|
+| **Admin** | Everything — students, staff, users, settings, imports, fees, payroll |
+| **Teacher** | Dashboard, students, attendance, exams & results |
+| **Bursar** | Dashboard, fees, payroll, expenses |
 
 ## Getting started
 
-1. **Set up the school** — First launch opens the Setup Wizard: school profile
-   (name, motto, address, academic year, term) + first Admin account.
-2. **Configure subjects & staff** — Add subjects per class level, register staff.
-3. **Create user accounts** — Teacher and Bursar logins (Admin-only).
-4. **Bring in students** — Import from a SchoolPay export file or add manually.
-5. **Set up fees & assessments** — Fee structures per class/term; record
-   attendance and enter marks.
-6. **Choose your grading model** — Migration script sets current-year S1–S4 to
-   NLSC (dry-run first, backs up before writing). Legacy classes stay as-is.
-7. **Verify NLSC settings** — Before publishing NLSC report cards, check CA/exam
-   weights and grade bands in Settings → Grading (seeded as placeholders flagged
+1. **Set up the school** — First launch: school profile (name, motto, address,
+   academic year, term) + first Admin account.
+2. **Subjects & staff** — Add subjects per class level; register staff.
+3. **User accounts** — Teacher and Bursar logins (Admin-only).
+4. **Students** — Import from a SchoolPay export or add manually.
+5. **Fees & assessments** — Fee structures per class/term; record attendance and
+   enter marks.
+6. **Grading model** — Migration script sets current-year S1–S4 to NLSC
+   (dry-run first, backs up before writing). Legacy classes stay as-is.
+7. **Verify NLSC settings** — Check CA/exam weights and grade bands in Settings
+   → Grading before publishing NLSC report cards (seeded as placeholders flagged
    "VERIFY WITH UNEB").
 
 ## How to run
