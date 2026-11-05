@@ -83,16 +83,6 @@ const ImportStudents = () => {
 
   const requiredFieldsMissing = FIELDS.filter((f) => f.required).some((f) => !mapping[f.key]);
 
-  // ── Effective ready count AFTER fixes and skips are applied ────────────────
-  // Keeps the preview "Ready" count in sync with the confirm-screen total
-  // (classified.counts.total) so the numbers match end to end.
-  const effectiveReadyCount = useMemo(() => {
-    const fixed = applyFixes(normalizedRows);
-    const filtered = fixed.filter((_, i) => !skipped.has(i));
-    const { ready } = validateRows(filtered, new Map(), CLASSES);
-    return ready.length;
-  }, [normalizedRows, fixes, skipped, applyFixes]);
-
   const applyFixes = useCallback((rs) => {
     return rs.map((r, i) => {
       const fix = fixes[i];
@@ -104,6 +94,16 @@ const ImportStudents = () => {
       };
     });
   }, [fixes]);
+
+  // ── Effective ready count AFTER fixes and skips are applied ────────────────
+  // Keeps the preview "Ready" count in sync with the confirm-screen total
+  // (classified.counts.total) so the numbers match end to end.
+  const effectiveReadyCount = useMemo(() => {
+    const fixed = applyFixes(normalizedRows);
+    const filtered = fixed.filter((_, i) => !skipped.has(i));
+    const { ready } = validateRows(filtered, new Map(), CLASSES);
+    return ready.length;
+  }, [normalizedRows, fixes, skipped, applyFixes]);
 
   // ── File upload ──────────────────────────────────────────────────────────
   const handleFileChange = async (e) => {
