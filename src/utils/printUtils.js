@@ -55,40 +55,42 @@ const LETTER_COLOR = {
 
 const gradeColor = (g) => LETTER_COLOR[g && g[0]] || '#475569';
 
+/**
+ * Build the header logo markup.
+ *
+ * - Empty / missing url -> empty string (school name only, no broken image, no layout shift).
+ * - Fixed max-height with width:auto keeps the header stable regardless of logo aspect ratio.
+ * - onerror swallows failed loads so a bad URL never shows a broken image icon.
+ */
+const logoMarkup = (url) => {
+  if (!url) return '';
+  return `<img src="${url}" alt="school logo" style="max-height:60px;width:auto;object-fit:contain;display:block;" onerror="this.style.display='none';" />`;
+};
+
 const isNlscCard = (card) =>
   Boolean(card && card.subjectRows && card.subjectRows.some(
     (r) => r.caMarks !== null && r.caMarks !== undefined
   )) || Boolean(card && card.subjectsAtDOrAbove !== undefined);
 
 /* ─────────────────────────────────────────────
-   REPORT CARD
+   REPORT CARD — shared page rendering
    ───────────────────────────────────────────── */
+
 /**
- * @param {object} cardData   - one entry from reportCardService.getReportCardData().reportCards
- * @param {object} schoolInfo - { name, address, motto, logoUrl }
- * @param {object} termInfo   - { academicYear, term }
+ * Build the inner HTML of ONE legacy report-card page.
+ * Returns the `<div class="page card-page">...</div>` markup (no outer html/head/body).
  */
-export const printReportCard = (cardData, schoolInfo = {}, termInfo = {}) => {
+function renderLegacyCardHtml(cardData, schoolInfo, termInfo) {
   const {
     student, subjectRows, aggMarks, aggOutOf, avgPercentage, overallGrade,
     overallRemarks, position, totalInClass,
-    // NLSC fields
-    subjectsAtDOrAbove, totalSubjects, certificateEligible, subjectLetters,
-    // project work injected by the caller when available
-    projectWork,
   } = cardData;
 
   const schoolName    = schoolInfo.name    || 'School Name';
   const schoolAddress = schoolInfo.address || '';
   const schoolMotto   = schoolInfo.motto   || '';
-  const logoHtml      = schoolInfo.logoUrl ? `<img src="${schoolInfo.logoUrl}" alt="logo" style="height:60px;object-fit:contain;" />` : '';
+  const logoHtml      = logoMarkup(schoolInfo.logoUrl);
 
-  if (isNlscCard(cardData)) {
-    return printNlscReportCard({ student, subjectRows, subjectsAtDOrAbove, totalSubjects,
-      certificateEligible, subjectLetters, projectWork, schoolInfo, termInfo, logoHtml, schoolName, schoolAddress, schoolMotto });
-  }
-
-  // ──────── LEGACY REPORT CARD (unchanged output) ────────
   const subjectRowsHtml = subjectRows.map((row) => {
     const examCols = row.examResults.map(
       (r) => `<td style="text-align:center;padding:5px 8px;">${r.marks}/${r.outOf}<br/><small style="color:#64748b;">${r.examType}</small></td>`
@@ -107,117 +109,97 @@ export const printReportCard = (cardData, schoolInfo = {}, termInfo = {}) => {
       </tr>`;
   }).join('');
 
-  const html = `<!DOCTYPE html><html><head>
-    <meta charset="UTF-8" /><title>Report Card — ${student.fullName}</title>
-    <style>
-      ${baseStyles}
-      .page { max-width: 780px; margin: 0 auto; padding: 16px; }
-      .header { display:flex; align-items:center; gap:16px; border-bottom:3px solid #1e3a5f; padding-bottom:12px; margin-bottom:16px; }
-      .header-text { flex:1; }
-      h1 { font-size:20px; font-weight:700; color:#1e3a5f; }
-      .subtitle { font-size:11px; color:#64748b; margin-top:2px; }
-      .badge-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
-      .badge { background:#f1f5f9; border-radius:6px; padding:4px 10px; font-size:11px; }
-      .badge strong { color:#1e3a5f; }
-      table { width:100%; border-collapse:collapse; margin-bottom:14px; font-size:11.5px; }
-      thead tr { background:#1e3a5f; color:#fff; }
-      thead th { padding:7px 8px; text-align:left; font-weight:600; font-size:11px; }
-      tbody tr:nth-child(even) { background:#f8fafc; }
-      .summary-box { display:flex; gap:16px; flex-wrap:wrap; border:2px solid #1e3a5f; border-radius:8px; padding:12px 16px; margin-bottom:14px; }
-      .summary-item { flex:1; min-width:100px; text-align:center; }
-      .summary-item .val { font-size:22px; font-weight:700; color:#1e3a5f; }
-      .summary-item .lbl { font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:.5px; margin-top:2px; }
-      .footer-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:24px; margin-top:20px; }
-      .sig-line { border-top:1px solid #cbd5e1; padding-top:4px; font-size:10px; color:#64748b; margin-top:32px; }
-      .print-btn { display:block; margin:16px auto; padding:8px 24px; background:#1e3a5f; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:13px; }
-    </style>
-  </head><body>
-  <div class="page">
-    <div class="header">
-      ${logoHtml}
-      <div class="header-text">
-        <h1>${schoolName}</h1>
-        ${schoolAddress ? `<div class="subtitle">${schoolAddress}</div>` : ''}
-        ${schoolMotto   ? `<div class="subtitle" style="font-style:italic;">${schoolMotto}</div>` : ''}
+  return `
+    <div class="page card-page" style="break-after: page;">
+      <div class="header">
+        ${logoHtml}
+        <div class="header-text">
+          <h1>${schoolName}</h1>
+          ${schoolAddress ? `<div class="subtitle">${schoolAddress}</div>` : ''}
+          ${schoolMotto   ? `<div class="subtitle" style="font-style:italic;">${schoolMotto}</div>` : ''}
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:16px;font-weight:700;color:#1e3a5f;">STUDENT REPORT CARD</div>
+          <div class="subtitle">${termInfo.term || ''} &nbsp;|&nbsp; ${termInfo.academicYear || ''}</div>
+        </div>
       </div>
-      <div style="text-align:right;">
-        <div style="font-size:16px;font-weight:700;color:#1e3a5f;">STUDENT REPORT CARD</div>
-        <div class="subtitle">${termInfo.term || ''} &nbsp;|&nbsp; ${termInfo.academicYear || ''}</div>
-      </div>
-    </div>
 
-    <div class="badge-row">
-      <div class="badge"><strong>Name:</strong> ${student.fullName}</div>
-      <div class="badge"><strong>Adm No:</strong> ${student.admissionNumber || '—'}</div>
-      <div class="badge"><strong>Class:</strong> ${student.classLevel || ''}${student.stream ? student.stream : ''}</div>
-      ${student.gender ? `<div class="badge"><strong>Gender:</strong> ${student.gender}</div>` : ''}
-      ${student.schoolpayCode ? `<div class="badge"><strong>SchoolPay Code:</strong> ${student.schoolpayCode}</div>` : ''}
-    </div>
-
-    <table>
-      <thead>
-        <tr>
-          <th style="width:180px;">Subject</th>
-          <th colspan="10" style="text-align:center;">Exam Scores</th>
-          <th style="text-align:center;">Total</th>
-          <th style="text-align:center;">%</th>
-          <th style="text-align:center;">Grade</th>
-          <th>Remarks</th>
-        </tr>
-      </thead>
-      <tbody>${subjectRowsHtml}</tbody>
-    </table>
-
-    <div class="summary-box">
-      <div class="summary-item">
-        <div class="val">${aggMarks !== null ? `${aggMarks}/${aggOutOf}` : '—'}</div>
-        <div class="lbl">Total Marks</div>
+      <div class="badge-row">
+        <div class="badge"><strong>Name:</strong> ${student.fullName}</div>
+        <div class="badge"><strong>Adm No:</strong> ${student.admissionNumber || '—'}</div>
+        <div class="badge"><strong>Class:</strong> ${student.classLevel || ''}${student.stream ? student.stream : ''}</div>
+        ${student.gender ? `<div class="badge"><strong>Gender:</strong> ${student.gender}</div>` : ''}
+        ${student.schoolpayCode ? `<div class="badge"><strong>SchoolPay Code:</strong> ${student.schoolpayCode}</div>` : ''}
       </div>
-      <div class="summary-item">
-        <div class="val">${avgPercentage !== null ? avgPercentage + '%' : '—'}</div>
-        <div class="lbl">Average</div>
-      </div>
-      <div class="summary-item">
-        <div class="val" style="color:${gradeColor(overallGrade)}">${overallGrade}</div>
-        <div class="lbl">Overall Grade</div>
-      </div>
-      <div class="summary-item">
-        <div class="val">${cardData.streamPosition !== null && cardData.streamPosition !== undefined ? `${cardData.streamPosition} / ${cardData.streamTotal || ''}` : (position !== null ? `${position} / ${totalInClass}` : '—')}</div>
-        <div class="lbl">Stream Position</div>
-      </div>
-      <div class="summary-item">
-        <div class="val">${cardData.overallClassPosition !== null && cardData.overallClassPosition !== undefined ? `${cardData.overallClassPosition} / ${cardData.overallClassTotal || totalInClass || ''}` : (position !== null ? `${position} / ${totalInClass}` : '—')}</div>
-        <div class="lbl">Overall Class Position</div>
-      </div>
-      <div class="summary-item" style="flex:2;text-align:left;padding-left:8px;">
-        <div style="font-size:13px;font-weight:600;color:#475569;">${overallRemarks}</div>
-        <div class="lbl">Teacher's Remarks</div>
-      </div>
-    </div>
 
-    <div class="footer-grid">
-      <div><div class="sig-line">Class Teacher's Signature</div></div>
-      <div><div class="sig-line">Head Teacher's Signature</div></div>
-      <div><div class="sig-line">Parent / Guardian Signature</div></div>
-    </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:180px;">Subject</th>
+            <th colspan="10" style="text-align:center;">Exam Scores</th>
+            <th style="text-align:center;">Total</th>
+            <th style="text-align:center;">%</th>
+            <th style="text-align:center;">Grade</th>
+            <th>Remarks</th>
+          </tr>
+        </thead>
+        <tbody>${subjectRowsHtml}</tbody>
+      </table>
 
-    <div style="margin-top:18px;font-size:10px;color:#94a3b8;text-align:center;">
-      Generated on ${new Date().toLocaleDateString('en-UG', { year:'numeric', month:'long', day:'numeric' })}
-      &nbsp;·&nbsp; ${schoolName}
-    </div>
-  </div>
-  <button class="print-btn no-print" onclick="window.print()">🖨 Print Report Card</button>
-  </body></html>`;
+      <div class="summary-box">
+        <div class="summary-item">
+          <div class="val">${aggMarks !== null ? `${aggMarks}/${aggOutOf}` : '—'}</div>
+          <div class="lbl">Total Marks</div>
+        </div>
+        <div class="summary-item">
+          <div class="val">${avgPercentage !== null ? avgPercentage + '%' : '—'}</div>
+          <div class="lbl">Average</div>
+        </div>
+        <div class="summary-item">
+          <div class="val" style="color:${gradeColor(overallGrade)}">${overallGrade}</div>
+          <div class="lbl">Overall Grade</div>
+        </div>
+        <div class="summary-item">
+          <div class="val">${cardData.streamPosition !== null && cardData.streamPosition !== undefined ? `${cardData.streamPosition} / ${cardData.streamTotal || ''}` : (position !== null ? `${position} / ${totalInClass}` : '—')}</div>
+          <div class="lbl">Stream Position</div>
+        </div>
+        <div class="summary-item">
+          <div class="val">${cardData.overallClassPosition !== null && cardData.overallClassPosition !== undefined ? `${cardData.overallClassPosition} / ${cardData.overallClassTotal || totalInClass || ''}` : (position !== null ? `${position} / ${totalInClass}` : '—')}</div>
+          <div class="lbl">Overall Class Position</div>
+        </div>
+        <div class="summary-item" style="flex:2;text-align:left;padding-left:8px;">
+          <div style="font-size:13px;font-weight:600;color:#475569;">${overallRemarks}</div>
+          <div class="lbl">Teacher's Remarks</div>
+        </div>
+      </div>
 
-  openPrintWindow(html, `Report Card — ${student.fullName}`);
-};
+      <div class="footer-grid">
+        <div><div class="sig-line">Class Teacher's Signature</div></div>
+        <div><div class="sig-line">Head Teacher's Signature</div></div>
+        <div><div class="sig-line">Parent / Guardian Signature</div></div>
+      </div>
 
-/* ─────────────────────────────────────────────
-   NLSC REPORT CARD (competence-based)
-   ───────────────────────────────────────────── */
-function printNlscReportCard({ student, subjectRows, subjectsAtDOrAbove, totalSubjects,
-  certificateEligible, subjectLetters, projectWork, schoolInfo, termInfo,
-  logoHtml, schoolName, schoolAddress, schoolMotto }) {
+      <div style="margin-top:18px;font-size:10px;color:#94a3b8;text-align:center;">
+        Generated on ${new Date().toLocaleDateString('en-UG', { year:'numeric', month:'long', day:'numeric' })}
+        &nbsp;·&nbsp; ${schoolName}
+      </div>
+    </div>`;
+}
+
+/**
+ * Build the inner HTML of ONE NLSC report-card page.
+ * Returns the `<div class="page card-page">...</div>` markup (no outer html/head/body).
+ */
+function renderNlscCardHtml(cardData, schoolInfo, termInfo) {
+  const {
+    student, subjectRows, subjectsAtDOrAbove, totalSubjects,
+    certificateEligible, subjectLetters, projectWork,
+  } = cardData;
+
+  const schoolName    = schoolInfo.name    || 'School Name';
+  const schoolAddress = schoolInfo.address || '';
+  const schoolMotto   = schoolInfo.motto   || '';
+  const logoHtml      = logoMarkup(schoolInfo.logoUrl);
 
   const rowsHtml = subjectRows.map((row) => {
     const ca = row.caMarks !== null && row.caOutOf
@@ -263,6 +245,89 @@ function printNlscReportCard({ student, subjectRows, subjectsAtDOrAbove, totalSu
   const cert = certificateEligible ? 'YES' : 'NO';
   const certColor = certificateEligible ? '#15803d' : '#dc2626';
 
+  return `
+    <div class="page card-page" style="break-after: page;">
+      <div class="header">
+        ${logoHtml}
+        <div class="header-text">
+          <h1>${schoolName}</h1>
+          ${schoolAddress ? `<div class="subtitle">${schoolAddress}</div>` : ''}
+          ${schoolMotto   ? `<div class="subtitle" style="font-style:italic;">${schoolMotto}</div>` : ''}
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:16px;font-weight:700;color:#1e3a5f;">STUDENT REPORT CARD — NLSC</div>
+          <div class="subtitle">${termInfo.term || ''} &nbsp;|&nbsp; ${termInfo.academicYear || ''}</div>
+        </div>
+      </div>
+
+      <div class="badge-row">
+        <div class="badge"><strong>Name:</strong> ${student.fullName}</div>
+        <div class="badge"><strong>Adm No:</strong> ${student.admissionNumber || '—'}</div>
+        <div class="badge"><strong>Class:</strong> ${student.classLevel || ''}${student.stream ? student.stream : ''}</div>
+        <div class="badge"><strong>Curriculum:</strong> New Lower Secondary</div>
+        ${student.gender ? `<div class="badge"><strong>Gender:</strong> ${student.gender}</div>` : ''}
+        ${student.schoolpayCode ? `<div class="badge"><strong>SchoolPay Code:</strong> ${student.schoolpayCode}</div>` : ''}
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th style="width:170px;">Subject</th>
+            <th style="text-align:center;">CA</th>
+            <th style="text-align:center;">Exam</th>
+            <th style="text-align:center;">Final Score</th>
+            <th style="text-align:center;">Letter</th>
+            <th>Descriptor</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}${projectHtml}</tbody>
+      </table>
+
+      <div class="cert-box">
+        <div class="cert-item">
+          <div class="val">${totalSubjects !== null ? totalSubjects : '—'}</div>
+          <div class="lbl">Subjects</div>
+        </div>
+        <div class="cert-item">
+          <div class="val">${dOrAbove}</div>
+          <div class="lbl">At D or Above</div>
+        </div>
+        <div class="cert-item">
+          <div class="val" style="color:${certColor};">${cert}</div>
+          <div class="lbl">Qualifies for Certificate</div>
+        </div>
+      </div>
+
+      <div class="footer-grid">
+        <div><div class="sig-line">Class Teacher's Signature</div></div>
+        <div><div class="sig-line">Head Teacher's Signature</div></div>
+        <div><div class="sig-line">Parent / Guardian Signature</div></div>
+      </div>
+
+      <div style="margin-top:18px;font-size:10px;color:#94a3b8;text-align:center;">
+        Generated on ${new Date().toLocaleDateString('en-UG', { year:'numeric', month:'long', day:'numeric' })}
+        &nbsp;·&nbsp; ${schoolName}
+      </div>
+    </div>`;
+}
+
+/* ─────────────────────────────────────────────
+   SINGLE REPORT CARD (unchanged behaviour)
+   ───────────────────────────────────────────── */
+
+/**
+ * @param {object} cardData   - one entry from reportCardService.getReportCardData().reportCards
+ * @param {object} schoolInfo - { name, address, motto, logoUrl }
+ * @param {object} termInfo   - { academicYear, term }
+ */
+export const printReportCard = (cardData, schoolInfo = {}, termInfo = {}) => {
+  const cardHtml = isNlscCard(cardData)
+    ? renderNlscCardHtml(cardData, schoolInfo, termInfo)
+    : renderLegacyCardHtml(cardData, schoolInfo, termInfo);
+
+  const schoolName = schoolInfo.name || 'School Name';
+  const student    = cardData.student || {};
   const html = `<!DOCTYPE html><html><head>
     <meta charset="UTF-8" /><title>Report Card — ${student.fullName}</title>
     <style>
@@ -288,77 +353,75 @@ function printNlscReportCard({ student, subjectRows, subjectsAtDOrAbove, totalSu
       .footer-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:24px; margin-top:20px; }
       .sig-line { border-top:1px solid #cbd5e1; padding-top:4px; font-size:10px; color:#64748b; margin-top:32px; }
       .print-btn { display:block; margin:16px auto; padding:8px 24px; background:#1e3a5f; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:13px; }
+      .card-page { break-after: page; }
     </style>
   </head><body>
-  <div class="page">
-    <div class="header">
-      ${logoHtml}
-      <div class="header-text">
-        <h1>${schoolName}</h1>
-        ${schoolAddress ? `<div class="subtitle">${schoolAddress}</div>` : ''}
-        ${schoolMotto   ? `<div class="subtitle" style="font-style:italic;">${schoolMotto}</div>` : ''}
-      </div>
-      <div style="text-align:right;">
-        <div style="font-size:16px;font-weight:700;color:#1e3a5f;">STUDENT REPORT CARD — NLSC</div>
-        <div class="subtitle">${termInfo.term || ''} &nbsp;|&nbsp; ${termInfo.academicYear || ''}</div>
-      </div>
-    </div>
-
-    <div class="badge-row">
-      <div class="badge"><strong>Name:</strong> ${student.fullName}</div>
-      <div class="badge"><strong>Adm No:</strong> ${student.admissionNumber || '—'}</div>
-      <div class="badge"><strong>Class:</strong> ${student.classLevel || ''}${student.stream ? student.stream : ''}</div>
-      <div class="badge"><strong>Curriculum:</strong> New Lower Secondary</div>
-      ${student.gender ? `<div class="badge"><strong>Gender:</strong> ${student.gender}</div>` : ''}
-      ${student.schoolpayCode ? `<div class="badge"><strong>SchoolPay Code:</strong> ${student.schoolpayCode}</div>` : ''}
-    </div>
-
-    <table>
-      <thead>
-        <tr>
-          <th style="width:170px;">Subject</th>
-          <th style="text-align:center;">CA</th>
-          <th style="text-align:center;">Exam</th>
-          <th style="text-align:center;">Final Score</th>
-          <th style="text-align:center;">Letter</th>
-          <th>Descriptor</th>
-          <th>Status</th>
-        </tr>
-      </thead>
-      <tbody>${rowsHtml}${projectHtml}</tbody>
-    </table>
-
-    <div class="cert-box">
-      <div class="cert-item">
-        <div class="val">${totalSubjects !== null ? totalSubjects : '—'}</div>
-        <div class="lbl">Subjects</div>
-      </div>
-      <div class="cert-item">
-        <div class="val">${dOrAbove}</div>
-        <div class="lbl">At D or Above</div>
-      </div>
-      <div class="cert-item">
-        <div class="val" style="color:${certColor};">${cert}</div>
-        <div class="lbl">Qualifies for Certificate</div>
-      </div>
-    </div>
-
-    <div class="footer-grid">
-      <div><div class="sig-line">Class Teacher's Signature</div></div>
-      <div><div class="sig-line">Head Teacher's Signature</div></div>
-      <div><div class="sig-line">Parent / Guardian Signature</div></div>
-    </div>
-
-    <div style="margin-top:18px;font-size:10px;color:#94a3b8;text-align:center;">
-      Generated on ${new Date().toLocaleDateString('en-UG', { year:'numeric', month:'long', day:'numeric' })}
-      &nbsp;·&nbsp; ${schoolName}
-    </div>
-  </div>
+  ${cardHtml}
   <button class="print-btn no-print" onclick="window.print()">🖨 Print Report Card</button>
   </body></html>`;
 
   openPrintWindow(html, `Report Card — ${student.fullName}`);
-}
+};
+
+/* ─────────────────────────────────────────────
+   BULK REPORT CARDS — one combined document
+   ───────────────────────────────────────────── */
+
+/**
+ * Print every card in `cards` as a single combined document: one card per page,
+ * one print dialog. Intended for "Print All" of a class/stream (60+ students).
+ * Each card is a full page (`break-after: page`); the last card has no trailing
+ * page break so the document ends cleanly.
+ *
+ * @param {Array} cards     - array of cardData objects (legacy or NLSC)
+ * @param {object} schoolInfo - { name, address, motto, logoUrl }
+ * @param {object} termInfo   - { academicYear, term }
+ */
+export const printReportCards = (cards, schoolInfo = {}, termInfo = {}) => {
+  if (!cards || !cards.length) return;
+
+  const schoolName = schoolInfo.name || 'School Name';
+  const pages = cards.map((cardData, idx) => {
+    const isLast = idx === cards.length - 1;
+    const pageStyle = isLast ? 'break-after: auto;' : 'break-after: page;';
+    const base = isNlscCard(cardData)
+      ? renderNlscCardHtml(cardData, schoolInfo, termInfo)
+      : renderLegacyCardHtml(cardData, schoolInfo, termInfo);
+    // Strip the per-card break-after from the inner helper and apply our own.
+    return base.replace('style="break-after: page;"', `style="${pageStyle}"`);
+  }).join('');
+
+  const html = `<!DOCTYPE html><html><head>
+    <meta charset="UTF-8" /><title>Report Cards — ${schoolName}</title>
+    <style>
+      ${baseStyles}
+      .page { max-width: 780px; margin: 0 auto; padding: 16px; }
+      .header { display:flex; align-items:center; gap:16px; border-bottom:3px solid #1e3a5f; padding-bottom:12px; margin-bottom:16px; }
+      .header-text { flex:1; }
+      h1 { font-size:20px; font-weight:700; color:#1e3a5f; }
+      .subtitle { font-size:11px; color:#64748b; margin-top:2px; }
+      .badge-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+      .badge { background:#f1f5f9; border-radius:6px; padding:4px 10px; font-size:11px; }
+      .badge strong { color:#1e3a5f; }
+      table { width:100%; border-collapse:collapse; margin-bottom:14px; font-size:11.5px; }
+      thead tr { background:#1e3a5f; color:#fff; }
+      thead th { padding:7px 8px; text-align:left; font-weight:600; font-size:11px; }
+      tbody tr:nth-child(even) { background:#f8fafc; }
+      .summary-box { display:flex; gap:16px; flex-wrap:wrap; border:2px solid #1e3a5f; border-radius:8px; padding:12px 16px; margin-bottom:14px; }
+      .summary-item { flex:1; min-width:100px; text-align:center; }
+      .summary-item .val { font-size:22px; font-weight:700; color:#1e3a5f; }
+      .summary-item .lbl { font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:.5px; margin-top:2px; }
+      .cert-box { display:flex; gap:16px; flex-wrap:wrap; border:2px solid #15803d; border-radius:8px; padding:12px 16px; margin-bottom:14px; }
+      .cert-item { flex:1; min-width:100px; text-align:center; }
+      .footer-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:24px; margin-top:20px; }
+      .sig-line { border-top:1px solid #cbd5e1; padding-top:4px; font-size:10px; color:#64748b; margin-top:32px; }
+    </style>
+  </head><body>
+  ${pages}
+  </body></html>`;
+
+  openPrintWindow(html, `Report Cards — ${schoolName}`);
+};
 
 /* ─────────────────────────────────────────────
    CLASS BROADSHEET
@@ -368,7 +431,7 @@ export const printBroadsheet = (broadsheetData, schoolInfo = {}, termInfo = {}) 
   const schoolName    = schoolInfo.name    || 'School Name';
   const schoolAddress = schoolInfo.address || '';
   const schoolMotto   = schoolInfo.motto   || '';
-  const logoHtml      = schoolInfo.logoUrl ? '<img src="' + schoolInfo.logoUrl + '" alt="logo" style="height:60px;object-fit:contain;" />' : '';
+  const logoHtml      = logoMarkup(schoolInfo.logoUrl);
 
   const firstCard = (reportCards && reportCards[0]) || {};
   const isNlsc = isNlscCard(firstCard);
@@ -431,6 +494,9 @@ export const printBroadsheet = (broadsheetData, schoolInfo = {}, termInfo = {}) 
     + 'thead tr { background:#1e3a5f; color:#fff; }'
     + 'thead th { padding:6px 4px; text-align:left; font-weight:600; font-size:9px; white-space:nowrap; }'
     + 'tbody tr:nth-child(even) { background:#f8fafc; }'
+    /* Page-break control: keep each row on one page and repeat the header. */
+    + 'tbody tr { break-inside: avoid; }'
+    + 'thead { display: table-header-group; }'
     + '@page { size: landscape; margin: 10mm; }'
     + '.print-btn { display:block; margin:16px auto; padding:8px 24px; background:#1e3a5f; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:13px; }'
     + '</style>'
@@ -535,6 +601,9 @@ function printNlscBroadsheet({ reportCards, subjects, classLevel, stream, school
     + 'thead tr { background:#1e3a5f; color:#fff; }'
     + 'thead th { padding:6px 4px; text-align:left; font-weight:600; font-size:9px; white-space:nowrap; }'
     + 'tbody tr:nth-child(even) { background:#f8fafc; }'
+    /* Page-break control: keep each row on one page and repeat the header. */
+    + 'tbody tr { break-inside: avoid; }'
+    + 'thead { display: table-header-group; }'
     + '@page { size: landscape; margin: 10mm; }'
     + '.print-btn { display:block; margin:16px auto; padding:8px 24px; background:#1e3a5f; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:13px; }'
     + '</style>'
@@ -573,7 +642,7 @@ function printNlscBroadsheet({ reportCards, subjects, classLevel, stream, school
     + '</body></html>';
 
   openPrintWindow(html);
-};
+}
 
 /* ─────────────────────────────────────────────
    PAYROLL RECEIPT (unchanged)

@@ -5,11 +5,14 @@ import {
   reauthenticateWithCredential,
   EmailAuthProvider,
 } from 'firebase/auth';
+import { writeBatch } from 'firebase/firestore';
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import {
   auth,
   appConfig,
+  db,
+  doc,
   getAllDocs,
   safeGet,
   setDocument,
@@ -60,10 +63,13 @@ export const createFirstAdmin = async (data) => {
     }
   }
 
-  // 2. Write (or overwrite) the Firestore profile. The user is now signed in,
-  //    so Firestore rules that require request.auth will pass. setDocument
-  //    creates the doc if missing or replaces it if it already exists.
-  const now     = new Date().toISOString();
+  // 2. Write the Firestore profile AND the setup flag in ONE batch so they are
+  //    atomic: either both land or neither. config/setup is the single source of
+  //    truth for "is the system set up?"; once it exists the setup screen never
+  //    runs again (App reads it via isSetupComplete() before sign-in).
+  const now = new Date().toISOString();
+  const batch = writeBatch(db);
+
   const docData = {
     type:            'user',
     uid,
@@ -77,7 +83,16 @@ export const createFirstAdmin = async (data) => {
     updatedAt:       now,
   };
 
-  await setDocument(COL, uid, docData);
+  batch.set(doc(db, COL, uid), docData);
+  batch.set(doc(db, 'config', 'setup'), {
+    type:          'setup',
+    setupComplete: true,
+    createdBy:     'system',
+    createdAt:     now,
+    updatedAt:     now,
+  });
+
+  await batch.commit();
   return { id: uid, ...docData };
 };
 

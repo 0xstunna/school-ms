@@ -76,8 +76,9 @@ const App = () => {
   useEffect(() => {
     const init = async () => {
       try {
-        // isSetupComplete reads config/app_config.
-        // Firestore rules allow this without authentication (allow read: if true).
+        // isSetupComplete reads config/setup (the first-admin guard flag).
+        // Firestore rules allow this read without authentication so the app can
+        // detect setup status on every cold boot before any user is signed in.
         const done = await isSetupComplete();
         setSetupDone(done);
         if (done) {

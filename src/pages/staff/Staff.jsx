@@ -3,19 +3,21 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Plus, Search, Edit2, Trash2, Users, Banknote, Receipt,
   Settings as SettingsIcon, Save, AlertTriangle, Printer,
-  BarChart2, TrendingUp, PieChart,
+  BarChart2, TrendingUp, PieChart, Download,
 } from 'lucide-react';
 import { getStaff, createStaff, updateStaff, deleteStaff } from '../../db/staffService.js';
 import { getPayrollEntries, recordPayroll, getExpenses, recordExpense, deleteExpense } from '../../db/payrollService.js';
 import { getConfig, updateConfig } from '../../db/configService.js';
 import { getGradingSettings, createOrUpdateGradingSettings, DEFAULT_GRADE_BANDS } from '../../db/gradingSettingsService.js';
 import { printPayrollReceipt } from '../../utils/printUtils.js';
+import { exportData, downloadJson } from '../../db/exportService.js';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { STAFF_POSITIONS, PAYMENT_METHODS, EXPENSE_CATEGORIES, TERMS } from '../../utils/constants.js';
 import { formatCurrency, formatDate, getCurrentDateISO, generateAcademicYears } from '../../utils/grading.js';
 import Button from '../../components/common/Button.jsx';
 import Modal, { ConfirmModal } from '../../components/common/Modal.jsx';
 import { Input, Select, Textarea, FormRow } from '../../components/common/Input.jsx';
+import SchoolLogoUpload from '../../components/common/SchoolLogoUpload.jsx';
 import {
   StatusBadge, EmptyState, PageHeader, Card, Badge, LoadingScreen, StatCard,
 } from '../../components/common/Badge.jsx';
@@ -913,6 +915,8 @@ export const Settings = () => {
   const [gradingLoading, setGradingLoading] = useState(true);
   const [gradingSaving, setGradingSaving] = useState(false);
   const [gradingSaved, setGradingSaved]   = useState(false);
+  const [exporting, setExporting]         = useState(false);
+  const [exportSaved, setExportSaved]     = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -928,6 +932,7 @@ export const Settings = () => {
           schoolAddress: cfg?.schoolAddress || '',
           schoolPhone:   cfg?.schoolPhone   || '',
           schoolEmail:   cfg?.schoolEmail   || '',
+          logoUrl:       cfg?.logoUrl       || '',
           academicYear:  cfg?.academicYear  || years[0],
           currentTerm:   cfg?.currentTerm   || 'Term 1',
         });
@@ -991,6 +996,27 @@ export const Settings = () => {
     finally { setGradingSaving(false); }
   };
 
+  const handleExportData = async () => {
+    setExporting(true);
+    setError('');
+    try {
+      const backup = await exportData();
+      const year  = config?.academicYear || 'school';
+      const term  = config?.currentTerm || 'term';
+      const date  = new Date().toISOString().slice(0, 10);
+      const filename = `school-ms-backup_${year}_${term}_${date}.json`
+        .replace(/\s+/g, '_')
+        .replace(/\//g, '-');
+      downloadJson(backup, filename);
+      setExportSaved(true);
+      setTimeout(() => setExportSaved(false), 3000);
+    } catch (e) {
+      setError(e.message || 'Export failed.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (loading) return <LoadingScreen />;
 
   return (
@@ -1006,6 +1032,21 @@ export const Settings = () => {
             <Input label="Phone" type="tel" value={form.schoolPhone} onChange={set('schoolPhone')} />
             <Input label="Email" type="email" value={form.schoolEmail} onChange={set('schoolEmail')} />
           </FormRow>
+
+          {/* Logo upload — stored as base64 in Firestore config doc (admin only). */}
+          <div className="border-t border-slate-100 pt-4">
+            <h4 className="text-sm font-semibold text-slate-700 mb-3">School Logo</h4>
+            <SchoolLogoUpload
+              currentUrl={form.logoUrl}
+              onChange={(url) => setForm((p) => ({ ...p, logoUrl: url }))}
+              label="School logo (PNG / JPG / WebP, max ~500 KB)"
+            />
+            <p className="text-xs text-slate-500 mt-2">
+              Logo is compressed to ~300 px and embedded in report cards and
+              broadsheets. Leave unset to show the school name only.
+            </p>
+          </div>
+
           <div className="border-t border-slate-100 pt-4">
             <h4 className="text-sm font-semibold text-slate-700 mb-3">Academic Period</h4>
             <FormRow>
@@ -1067,6 +1108,21 @@ export const Settings = () => {
           <div className="flex items-center gap-3 pt-2">
             <Button icon={Save} onClick={handleSave} loading={saving}>Save Settings</Button>
             {saved && <span className="text-emerald-600 text-sm font-medium">✓ Settings saved</span>}
+          </div>
+
+          {/* Data export — admin only (Settings route is admin-guarded). */}
+          <div className="border-t border-slate-100 pt-5 mt-6">
+            <h4 className="text-sm font-semibold text-slate-700 mb-3">Data backup / export</h4>
+            <p className="text-xs text-slate-500 mb-3">
+              Download a JSON backup of students, exams, results, project work,
+              classes and settings. Auth data (user accounts) is not included.
+            </p>
+            <div className="flex items-center gap-3">
+              <Button icon={Download} onClick={handleExportData} loading={exporting} disabled={exporting}>
+                {exporting ? 'Preparing backup…' : 'Export data (JSON)'}
+              </Button>
+              {exportSaved && <span className="text-emerald-600 text-sm font-medium ml-3">✓ Backup downloaded</span>}
+            </div>
           </div>
         </div>
       </Card>

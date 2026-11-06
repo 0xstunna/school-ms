@@ -1,0 +1,263 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─────────────────────────────────────────────────────────────────
+    // Helpers
+    // ─────────────────────────────────────────────────────────────────
+
+    // Signed-in Firebase Auth user.
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Caller's Firestore user profile (role, active). Caller must be signed in.
+    function callerProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    // Caller has a specific role (signed in + profile exists + role matches).
+    function hasRole(role) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && callerProfile().data.role == role;
+    }
+
+    // Caller is an admin.
+    function isAdmin() {
+      return hasRole('admin');
+    }
+
+    // Caller is a teacher.
+    function isTeacher() {
+      return hasRole('teacher');
+    }
+
+    // Caller is a bursar.
+    function isBursar() {
+      return hasRole('bursar');
+    }
+
+    // Caller is signed-in staff (admin / teacher / bursar) with an active profile.
+    function isStaff() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && callerProfile().data.active == true
+        && (callerProfile().data.role == 'admin'
+            || callerProfile().data.role == 'teacher'
+            || callerProfile().data.role == 'bursar');
+    }
+
+    // True while the very first admin account has not yet been created.
+    // config/setup must not exist. This is the single source of truth for
+    // "is the system set up?" — config/app_config keeps only school identity.
+    function setupNotDone() {
+      return !exists(/databases/$(database)/documents/config/setup);
+    }
+
+    // True when setup is complete (setup flag document exists).
+    function setupDone() {
+      return exists(/databases/$(database)/documents/config/setup);
+    }
+
+    // The field being written to users/<id>.role is not being changed to admin
+    // by anyone other than an admin (prevents self-escalation / non-admin role
+    // changes). A missing role field on create is treated as not admin.
+    function noRoleEscalation() {
+      // On create, the caller may only set role == 'admin' if they are an admin.
+      if (!isAdmin()) {
+        return request.resource.data.role != 'admin';
+      }
+      return true;
+    }
+
+    // First-admin exception: while setup is not done, the person signing up as
+    // the first admin may create their own users/{uid} profile with role admin.
+    // This is the only time a non-admin-profile caller may create an admin.
+    function isFirstAdminCreate() {
+      return setupNotDone()
+        && request.auth.uid == userId
+        && request.resource.data.role == 'admin';
+    }
+
+    // On update, the role field may not be changed at all unless the caller is
+    // an admin. Non-admins (including the user editing their own profile) may
+    // not touch role. Any other field is fine for staff.
+    function roleNotChangedUnlessAdmin() {
+      if (!isAdmin()) {
+        return !(request.resource.data.role != resource.data.role);
+      }
+      return true;
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // SCHOOL SETTINGS — config/{doc} (config/app_config + config/setup)
+    // ─────────────────────────────────────────────────────────────────
+    // config/app_config : school name, logo, motto, address, academic year,
+    //                     term. Non-sensitive identity info only.
+    //   READ : signed-in staff; publicly readable for cold-boot setup check.
+    //   WRITE: admin only. create allowed anytime (admin), update only after
+    //          setup is done.
+    // config/setup : first-admin guard flag. Created once in the same batch as
+    //                the first admin profile. Never updated or deleted.
+    //   READ : anyone (needed before sign-in).
+    //   WRITE: anyone, but ONLY while setupNotDone() — i.e. the doc may be
+    //          created exactly once, then it is immutable forever.
+    match /config/{doc} {
+      // Reads
+      allow read: if isStaff() || doc == 'app_config' || doc == 'setup';
+
+      // config/app_config: admin may create it after the first admin exists
+      // (step 2 of setup), and update it afterwards. setupDone() guards updates
+      // so the school profile isn't rewritten outside of setup/admin action.
+      allow create: if doc == 'app_config' && isAdmin();
+      allow update: if doc == 'app_config' && isAdmin() && setupDone();
+
+      // config/setup: may be created once (with the first admin batch) while
+      // setup is not done. Once it exists it can never be modified.
+      allow create: if doc == 'setup' && setupNotDone();
+    }
+
+    // GRADING SETTINGS — config/grading_settings
+    //   READ : signed-in staff.   WRITE: admin only.
+    match /config/grading_settings {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // USER ACCOUNTS — users/{userId}
+    // ─────────────────────────────────────────────────────────────────
+    //   READ : signed-in staff.
+    //   CREATE: admin only, AND no role escalation (can't create a new admin
+    //           unless you are already an admin).
+    //   UPDATE: admin only for role; staff may update their own non-role fields.
+    //           Non-admins may never change role (self-escalation blocked).
+    //   DELETE: admin only.
+    match /users/{userId} {
+      allow read: if isStaff();
+
+      allow create: if (
+        (isAdmin() && noRoleEscalation())
+        || isFirstAdminCreate()
+      );
+
+      allow update: if (
+        isStaff()
+        && (
+          // Admins may update any user (but role changes only via admin path).
+          isAdmin()
+          || // Non-admin staff may update only their own profile, never role.
+          (request.auth.uid == userId && roleNotChangedUnlessAdmin())
+        )
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // STUDENTS — students/{studentId}
+    // ─────────────────────────────────────────────────────────────────
+    match /students/{studentId} {
+      allow read: if isStaff();
+      allow create: if isAdmin() || isTeacher();
+      allow update: if isAdmin() || isTeacher();
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // MARKS / EXAM RESULTS — exam_results/{resultId}
+    // ─────────────────────────────────────────────────────────────────
+    match /exam_results/{resultId} {
+      allow read: if isStaff();
+      allow create, update: if isAdmin() || isTeacher();
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // EXAMS — exams/{examId}
+    // ─────────────────────────────────────────────────────────────────
+    match /exams/{examId} {
+      allow read: if isStaff();
+      allow create, update: if isAdmin() || isTeacher();
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // PROJECT WORK (NLSC) — projectWork/{pwId}
+    // ─────────────────────────────────────────────────────────────────
+    match /projectWork/{pwId} {
+      allow read: if isStaff();
+      allow create, update: if isAdmin() || isTeacher();
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // CLASS CONFIG — classes/{classId}
+    // ─────────────────────────────────────────────────────────────────
+    match /classes/{classId} {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // STAFF RECORDS — staff/{staffId}
+    // ─────────────────────────────────────────────────────────────────
+    match /staff/{staffId} {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // SUBJECTS — subjects/{subjectId}
+    // ─────────────────────────────────────────────────────────────────
+    match /subjects/{subjectId} {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // ATTENDANCE — attendance/{attendanceId}
+    // ─────────────────────────────────────────────────────────────────
+    match /attendance/{attendanceId} {
+      allow read: if isStaff();
+      allow create, update: if isAdmin() || isTeacher();
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // FEES — fee_structures/{id}, fee_payments/{id}
+    // ─────────────────────────────────────────────────────────────────
+    match /fee_structures/{feeId} {
+      allow read: if isStaff();
+      allow write: if isAdmin() || isBursar();
+    }
+
+    match /fee_payments/{paymentId} {
+      allow read: if isStaff();
+      allow create: if isAdmin() || isBursar();
+      allow update: if isAdmin() || isBursar();
+      allow delete: if isAdmin();
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // PAYROLL & EXPENSES — payroll/{id}, expenses/{id}
+    // ─────────────────────────────────────────────────────────────────
+    match /payroll/{payrollId} {
+      allow read: if isStaff();
+      allow write: if isAdmin() || isBursar();
+    }
+
+    match /expenses/{expenseId} {
+      allow read: if isStaff();
+      allow write: if isAdmin() || isBursar();
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // DEFAULT — deny everything not explicitly allowed above
+    // ─────────────────────────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

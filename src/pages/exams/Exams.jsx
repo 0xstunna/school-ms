@@ -6,14 +6,14 @@ import { getSubjects } from '../../db/subjectService.js';
 import { getConfig } from '../../db/configService.js';
 import { getProjectWork } from '../../db/projectWorkService.js';
 import { getReportCardData } from '../../db/reportCardService.js';
-import { printReportCard, printBroadsheet } from '../../utils/printUtils.js';
+import { printReportCard, printReportCards, printBroadsheet } from '../../utils/printUtils.js';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { CLASSES, STREAMS, EXAM_TYPES } from '../../utils/constants.js';
 import { formatDate, getGradeFromMarks } from '../../utils/grading.js';
 import Button from '../../components/common/Button.jsx';
 import Modal, { ConfirmModal } from '../../components/common/Modal.jsx';
 import { Input, Select, FormRow } from '../../components/common/Input.jsx';
-import { GradeBadge, EmptyState, PageHeader, Card, Badge, LoadingScreen } from '../../components/common/Badge.jsx';
+import { GradeBadge, EmptyState, PageHeader, Card, Badge, LoadingScreen, Spinner } from '../../components/common/Badge.jsx';
 
 /** Detect NLSC cards from data attached by resultsService (grading interface). */
 const isNlscCard = (card) => Boolean(card && card.subjectsAtDOrAbove !== undefined);
@@ -250,6 +250,7 @@ const ReportCardsModal = ({ open, onClose, config }) => {
   const [cards, setCards]           = useState(null);   // null = not yet loaded
   const [error, setError]           = useState('');
   const [printing, setPrinting]     = useState(null);   // studentId being printed
+  const [generating, setGenerating] = useState(false);  // combined doc being built
 
   // Reset when re-opened
   useEffect(() => {
@@ -302,12 +303,38 @@ const ReportCardsModal = ({ open, onClose, config }) => {
     }
   };
 
-  const handlePrintAll = () => {
+  const handlePrintAll = async () => {
     if (!cards) return;
-    cards.reportCards.forEach((card, i) => {
-      // stagger slightly so browser doesn't block multiple popups
-      setTimeout(() => handlePrintOne(card), i * 150);
-    });
+    setGenerating(true);
+    try {
+      // Attach project work to every NLSC card concurrently (single pass),
+      // then render ALL cards into ONE combined document with one print dialog.
+      const printData = await Promise.all(cards.reportCards.map(async (card) => {
+        const data = { ...card };
+        if (card.subjectsAtDOrAbove !== undefined) {
+          try {
+            const pw = await getProjectWork({ studentId: card.student.id, year: config?.academicYear });
+            data.projectWork = pw;
+          } catch (e) {
+            console.warn('Could not load project work for print:', e.message);
+            data.projectWork = [];
+          }
+        }
+        return data;
+      }));
+
+      printReportCards(printData, {
+        name:    config?.schoolName    || '',
+        address: config?.schoolAddress || '',
+        motto:   config?.schoolMotto   || '',
+        logoUrl: config?.logoUrl       || '',
+      }, {
+        academicYear: config?.academicYear,
+        term:         config?.currentTerm,
+      });
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const gradeColor = (g) => {
@@ -320,11 +347,17 @@ const ReportCardsModal = ({ open, onClose, config }) => {
       subtitle={config ? `${config.currentTerm}, ${config.academicYear}` : ''}
       footer={
         <>
-          <Button variant="secondary" onClick={onClose}>Close</Button>
+          <Button variant="secondary" onClick={onClose} disabled={generating}>Close</Button>
           {cards && (
-            <Button icon={Printer} onClick={handlePrintAll}>
-              Print All ({cards.reportCards.length})
+            <Button icon={Printer} onClick={handlePrintAll} loading={generating} disabled={generating}>
+              {generating ? 'Generating combined document…' : `Print All (${cards.reportCards.length})`}
             </Button>
+          )}
+          {generating && (
+            <div className="flex items-center gap-2 text-xs text-slate-500 ml-4">
+              <Spinner size="sm" />
+              <span>Building combined document…</span>
+            </div>
           )}
         </>
       }
