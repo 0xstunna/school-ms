@@ -2,8 +2,9 @@ import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, GraduationCap, ClipboardList, BookOpen,
   Wallet, Banknote, Receipt, Users, ShieldCheck, Settings,
-  ChevronRight, LogOut, School, BookMarked, Upload,
+  ChevronRight, LogOut, BookMarked, Upload,
 } from 'lucide-react';
+import AlamaLogo from '../../components/common/AlamaLogo.jsx';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { ROLE_LABELS } from '../../utils/constants.js';
 import { getVisibleNavItems } from '../../utils/featureFlags.js';
@@ -21,15 +22,15 @@ const Sidebar = ({ onLogout }) => {
 
   return (
     <aside className="w-60 min-h-screen bg-navy-950 flex flex-col select-none">
-      {/* Logo / School branding */}
+      {/* Logo / App branding */}
       <div className="px-5 py-5 border-b border-navy-800/60">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-amber-500 flex items-center justify-center flex-shrink-0">
-            <School className="w-5 h-5 text-white" />
+            <AlamaLogo className="w-5 h-5" />
           </div>
           <div className="min-w-0">
             <p className="font-display font-bold text-white text-sm leading-tight truncate">
-              School MS
+              Alama
             </p>
             <p className="text-navy-300 text-xs truncate capitalize">{ROLE_LABELS[user?.role]}</p>
           </div>

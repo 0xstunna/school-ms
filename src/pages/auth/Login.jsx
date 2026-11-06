@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { School, Eye, EyeOff, Lock, Mail } from 'lucide-react';
+import { Eye, EyeOff, Lock, Mail } from 'lucide-react';
+import AlamaLogo from '../../components/common/AlamaLogo.jsx';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { useNavigate } from 'react-router-dom';
 import Button from '../../components/common/Button.jsx';
@@ -43,14 +44,14 @@ const Login = ({ schoolName }) => {
         <div className="relative">
           <div className="flex items-center gap-3 mb-12">
             <div className="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center">
-              <School className="w-6 h-6 text-white" />
+              <AlamaLogo className="w-6 h-6" />
             </div>
-            <span className="font-display font-bold text-white text-lg">School MS</span>
+            <span className="font-display font-bold text-white text-lg">Alama</span>
           </div>
 
           <h1 className="font-display text-4xl font-bold text-white leading-tight mb-4">
-            Manage your<br />
-            <span className="text-amber-400">school</span> with ease
+            Run your<br />
+            <span className="text-amber-400">school</span> with Alama
           </h1>
           <p className="text-navy-300 text-sm leading-relaxed max-w-xs">
             Complete offline-first management for students, staff, fees, attendance, and academic records.
@@ -78,7 +79,7 @@ const Login = ({ schoolName }) => {
           {/* Mobile logo */}
           <div className="lg:hidden flex justify-center mb-8">
             <div className="w-12 h-12 rounded-xl bg-navy-900 flex items-center justify-center">
-              <School className="w-7 h-7 text-amber-400" />
+              <AlamaLogo className="w-7 h-7" />
             </div>
           </div>
 

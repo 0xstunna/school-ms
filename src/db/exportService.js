@@ -57,7 +57,7 @@ export const exportData = async () => {
   return {
     exportedAt: new Date().toISOString(),
     version: 1,
-    source: 'school-ms',
+    source: 'alama',
     data: {
       students,
       exams,

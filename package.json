@@ -1,7 +1,7 @@
 {
-  "name": "school-management-system",
+  "name": "alama",
   "version": "1.0.0",
-  "description": "Offline-first School Management System for Secondary Schools",
+  "description": "Offline-first Alama School Management System for Secondary Schools",
   "main": "electron/main.js",
   "scripts": {
     "dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
@@ -30,8 +30,8 @@
     "wait-on": "^7.2.0"
   },
   "build": {
-    "appId": "com.schoolms.desktop",
-    "productName": "School Management System",
+    "appId": "com.alama.desktop",
+    "productName": "Alama",
     "directories": {
       "output": "release"
     },

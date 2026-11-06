@@ -1004,7 +1004,7 @@ export const Settings = () => {
       const year  = config?.academicYear || 'school';
       const term  = config?.currentTerm || 'term';
       const date  = new Date().toISOString().slice(0, 10);
-      const filename = `school-ms-backup_${year}_${term}_${date}.json`
+      const filename = `alama-backup_${year}_${term}_${date}.json`
         .replace(/\s+/g, '_')
         .replace(/\//g, '-');
       downloadJson(backup, filename);

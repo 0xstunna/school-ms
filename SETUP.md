@@ -15,7 +15,7 @@ npm install
 ## 3. Add a Web App to Firebase
 
 1. In your project dashboard, click the **Web icon `</>`**
-2. Register app with a nickname (e.g. `school-ms-web`)
+2. Register app with a nickname (e.g. `alama-web`)
 3. **Copy the `firebaseConfig` object** — you'll need it next
 
 ## 4. Enable Email/Password authentication
@@ -73,7 +73,7 @@ does not block sign-in from it:
 
 1. Firebase console → **Build → Authentication** → **Settings** tab
 2. Under **Authorised domains**, click **Add domain**
-3. Enter your Vercel domain, e.g. `school-ms.vercel.app`
+3. Enter your Vercel domain, e.g. `alama.vercel.app`
 4. Click **Add**
 
 > Local development (`localhost`) and Electron are allowed by default; only

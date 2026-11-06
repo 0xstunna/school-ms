@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" aria-label="Alama">
+  <!-- Alama crest: navy shield with an amber "A" (alama = sign / mark) -->
+  <path fill="#0E1A45" d="M16 2 C10 2 5 7 5 13 C5 19 11 27 16 28 C21 27 27 19 27 13 C27 7 22 2 16 2 Z" />
+  <path stroke="#F59E0B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none" d="M13 24 L16 7 L19 24" />
+  <path stroke="#F59E0B" stroke-width="3" stroke-linecap="round" fill="none" d="M13.8 15.4 L18.2 15.4" />
+  <circle cx="16" cy="27.5" r="1.6" fill="#F59E0B" />
+</svg>

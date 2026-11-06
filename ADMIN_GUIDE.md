@@ -1,4 +1,4 @@
-# 📘 Admin Guide — School Management System
+# 📘 Admin Guide — Alama
 
 Plain-language guide for school staff. No technical background assumed.
 
@@ -150,7 +150,7 @@ Each card is on its own page, so pages never split a student's card across two s
 1. Sign in as **Admin**.
 2. Go to **Settings → Data backup / export**.
 3. Click **Export data (JSON)**.
-4. The browser downloads a file like `school-ms-backup_S1_Term 1_2026-11-07.json`.
+4. The browser downloads a file like `alama-backup_S1_Term 1_2026-11-07.json`.
 
 **What's included:** students, exams, results/marks, project work, classes, school settings, grading settings (bands, weights).
 

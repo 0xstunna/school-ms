@@ -15,7 +15,7 @@ import {
   PageHeader, Card, LoadingScreen, Badge, StatCard, EmptyState,
 } from '../../components/common/Badge.jsx';
 
-const MAPPING_STORAGE_KEY = 'schoolms_import_column_mapping_v1';
+const MAPPING_STORAGE_KEY = 'alama_import_column_mapping_v1';
 
 const FIELDS = [
   { key: 'schoolpayCode', label: 'SchoolPay Code', required: true },

@@ -111,7 +111,7 @@ const App = () => {
       <div className="min-h-screen bg-navy-950 flex items-center justify-center">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-navy-600 border-t-amber-400 rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-navy-400 text-sm">Loading School Management System…</p>
+          <p className="text-navy-400 text-sm">Loading Alama…</p>
         </div>
       </div>
     );

@@ -1,4 +1,4 @@
-# 🏫 School Digital Reports System
+# Alama — School Management System
 
 Enter marks, get reports.
 

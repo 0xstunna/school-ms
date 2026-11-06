@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { School, User, CheckCircle2, ChevronRight, ChevronLeft, Eye, EyeOff } from 'lucide-react';
+import { User, CheckCircle2, ChevronRight, ChevronLeft, Eye, EyeOff } from 'lucide-react';
+import AlamaLogo from '../../components/common/AlamaLogo.jsx';
 import { createConfig, isSetupComplete } from '../../db/configService.js';
 import { createFirstAdmin } from '../../db/userService.js';
 import { TERMS } from '../../utils/constants.js';
@@ -8,7 +9,7 @@ import Button from '../../components/common/Button.jsx';
 import { Input, Select, FormRow } from '../../components/common/Input.jsx';
 
 const STEPS = [
-  { id: 'school', label: 'School Profile', icon: School },
+  { id: 'school', label: 'School Profile', icon: AlamaLogo },
   { id: 'admin',  label: 'Admin Account',  icon: User   },
   { id: 'done',   label: 'Complete',       icon: CheckCircle2 },
 ];
@@ -102,9 +103,9 @@ const SetupWizard = ({ onComplete }) => {
       <div className="relative w-full max-w-xl animate-slide-up">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-amber-500 mb-4 shadow-lg">
-            <School className="w-9 h-9 text-white" />
+            <AlamaLogo className="w-9 h-9" />
           </div>
-          <h1 className="font-display text-3xl font-bold text-white mb-1">School Setup</h1>
+          <h1 className="font-display text-3xl font-bold text-white mb-1">Alama Setup</h1>
           <p className="text-navy-300 text-sm">Configure your system in just a few steps</p>
         </div>
 

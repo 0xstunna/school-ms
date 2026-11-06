@@ -18,7 +18,7 @@ function createWindow() {
       sandbox: false,
     },
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    icon: path.join(__dirname, '../public/icon.png'),
+    icon: path.join(__dirname, '../public/alama-icon.png'),
   });
 
   // Graceful show after load
