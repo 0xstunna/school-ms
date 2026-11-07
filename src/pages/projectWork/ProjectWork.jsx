@@ -180,7 +180,7 @@ export const ProjectWork = () => {
         actions={
           <div className="flex items-center gap-2">
             <Button icon={RefreshCw} onClick={loadRecords} size="sm">Refresh</Button>
-            <Button icon={Plus} onClick={() => handleOpen(null)} size="sm">Add Project Work</Button>
+            <Button icon={Plus} onClick={() => handleOpen(null)} size="md" className="whitespace-nowrap">Add Project Work</Button>
           </div>
         }
       />
