@@ -82,6 +82,17 @@ export function normalizeCode(value) {
   return trimmed;
 }
 
+// ── Normalise a class level: "S.2" / "s.2" / "S 2" -> "S2" ──
+// SchoolPay exports often write classes with dots ("S.2") while the system's
+// CLASSES constant uses the dot-free form ("S2"). Normalise so uploads match.
+export function normalizeClassLevel(value) {
+  if (value == null) return '';
+  return String(value)
+    .trim()
+    .toUpperCase()
+    .replace(/[.\s]/g, '');
+}
+
 // ── Parse a CSV or Excel file into {headers, rows} ──
 // Handles .csv and .xlsx (SheetJS reads both from an ArrayBuffer).
 // `deps.XLSX` allows injecting a mock SheetJS implementation for unit testing.
@@ -136,7 +147,7 @@ export function validateRows(rows, codeMap, validClasses = CLASSES) {
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     const code = normalizeCode(row.schoolpayCode);
-    const classLevel = (row.classLevel || '').trim();
+    const classLevel = normalizeClassLevel(row.classLevel);
 
     let reason = null;
     if (!code) {

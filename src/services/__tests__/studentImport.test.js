@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 
 import {
   normalizeCode,
+  normalizeClassLevel,
   validateRows,
   matchExisting,
   classifyRows,
@@ -69,6 +70,16 @@ assert.strictEqual(normalizeCode('1.5E+2'), '150', 'scientific notation small');
 assert.strictEqual(normalizeCode(12345), '12345', 'number input');
 console.log('  normalizeCode: PASS');
 
+// ── normalizeClassLevel ──
+console.log('--- normalizeClassLevel ---');
+assert.strictEqual(normalizeClassLevel('S.2'), 'S2', 'dotted S.2 -> S2');
+assert.strictEqual(normalizeClassLevel('s.3'), 'S3', 'lowercase dotted s.3 -> S3');
+assert.strictEqual(normalizeClassLevel('S 4'), 'S4', 'spaced S 4 -> S4');
+assert.strictEqual(normalizeClassLevel('S5'), 'S5', 'already-normal S5 unchanged');
+assert.strictEqual(normalizeClassLevel(''), '', 'empty -> empty');
+assert.strictEqual(normalizeClassLevel(null), '', 'null -> empty');
+console.log('  normalizeClassLevel: PASS');
+
 // ── validateRows ──
 console.log('--- validateRows ---');
 
@@ -91,6 +102,12 @@ assert.strictEqual(ready.length, 1, 'first duplicate is ready');
 ({ready, problems} = validateRows([row('SP002', {classLevel: 'S9'})], codeMap, validClasses));
 assert.strictEqual(problems.length, 1, 'unknown class flagged');
 assert.ok(problems[0].reason.includes('not in system'), 'unknown class reason');
+
+// dotted class levels are normalised and accepted (S.2 -> S2)
+({ready, problems} = validateRows([row('SP003', {classLevel: 'S.2'})], codeMap, validClasses));
+assert.strictEqual(problems.length, 0, 'dotted class S.2 normalised to S2 and accepted');
+assert.strictEqual(ready.length, 1, 'dotted class row is ready');
+assert.strictEqual(ready[0].classLevel, 'S2', 'normalised class level stored on ready row');
 
 // valid row
 ({ready, problems} = validateRows([row('SP002')], codeMap, validClasses));
