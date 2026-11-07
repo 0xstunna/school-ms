@@ -37,9 +37,9 @@ export const FEATURES = {
 
   // ── Out of scope (hidden by default) ──
   attendance:       false,  // Attendance module
-  fees:             false,  // Fees / fee payments (finance — money-related)
-  payroll:          false,  // Payroll / salary (finance — money-related)
-  expenses:         false,  // Expenses (finance — money-related)
+  fees:             false,  // Fees / fee payments (finance — hidden in production)
+  payroll:          false,  // Payroll / salary (finance — hidden in production)
+  expenses:         false,  // Expenses (finance — hidden in production)
   staff:            false,  // Staff management (hidden per scope decision)
 };
 

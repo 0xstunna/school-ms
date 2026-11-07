@@ -54,7 +54,7 @@ const Login = ({ schoolName }) => {
             <span className="text-amber-400">school</span> with Alama
           </h1>
           <p className="text-navy-300 text-sm leading-relaxed max-w-xs">
-            Complete offline-first management for students, staff, fees, attendance, and academic records.
+            Complete offline-first management for students, staff, attendance, and academic records.
           </p>
         </div>
 
