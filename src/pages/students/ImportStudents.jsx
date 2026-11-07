@@ -24,6 +24,16 @@ const FIELDS = [
   { key: 'admissionNumber', label: 'Admission Number', required: false },
 ];
 
+// Alternate header names auto-mapped to each field (checked after the field key
+// and label). Lets a SchoolPay "Students" sheet with headers like
+// "No.", "Reference Number", "Student Name" map without manual intervention.
+const FIELD_SYNONYMS = {
+  schoolpayCode: ['reference number', 'referencenumber', 'reference no'],
+  fullName: ['student name', 'studentname'],
+  classLevel: ['class', 'grade', 'form'],
+  admissionNumber: ['no.', 'admission no', 'admissionno'],
+};
+
 const ImportStudents = () => {
   const fileInputRef = useRef(null);
 
@@ -53,9 +63,14 @@ const ImportStudents = () => {
     FIELDS.forEach((f) => {
       const lk = f.key.toLowerCase();
       const ll = f.label.toLowerCase();
-      const match = hs.find(
-        (h) => h.toLowerCase().includes(lk) || h.toLowerCase().includes(ll)
-      );
+      const syn = (FIELD_SYNONYMS[f.key] || []).map((s) => s.toLowerCase());
+      let match = hs.find((h) => {
+        const lh = h.toLowerCase();
+        return lh.includes(lk) || lh.includes(ll);
+      });
+      if (!match) {
+        match = hs.find((h) => syn.some((s) => h.toLowerCase().includes(s)));
+      }
       m[f.key] = match || '';
     });
     return m;

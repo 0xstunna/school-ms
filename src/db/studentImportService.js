@@ -38,11 +38,14 @@ const COL = 'students';
 const BATCH_SIZE = 500;
 
 // ── SheetJS (vendored at src/lib/xlsx.mjs, dynamic import to stay out of bundle) ──
+// NOTE: `mod.XLSX` only carries `.version`; `XLSX.read` / `XLSX.utils` are
+// undefined on it. The working API is the module-level named exports `read`
+// and `utils`, so we cache the whole namespace object instead of `mod.XLSX`.
 let XLSX = null;
 async function getXLSX() {
   if (!XLSX) {
     const mod = await import('../lib/xlsx.mjs');
-    XLSX = mod.XLSX;
+    XLSX = mod;
   }
   return XLSX;
 }
@@ -80,26 +83,37 @@ export function normalizeCode(value) {
 }
 
 // ── Parse a CSV or Excel file into {headers, rows} ──
+// Handles .csv and .xlsx (SheetJS reads both from an ArrayBuffer).
 // `deps.XLSX` allows injecting a mock SheetJS implementation for unit testing.
 export async function parseFile(file, deps = {}) {
   const { XLSX: injectedXLSX } = deps;
   const XLSX = injectedXLSX || await getXLSX();
   const arrayBuffer = await file.arrayBuffer();
   const workbook = XLSX.read(arrayBuffer, {type: 'array'});
-  const sheetName = workbook.SheetNames[0];
+  // SchoolPay exports expose the data on the "Students" sheet; fall back to the
+  // first sheet so other workbooks still parse.
+  const sheetName =
+    workbook.SheetNames.includes('Students') ? 'Students' : workbook.SheetNames[0];
+  if (!sheetName) return {headers: [], rows: []};
   const worksheet = workbook.Sheets[sheetName];
   // raw: true gives raw cell values (numbers as numbers); we normalise codes ourselves
   const data = XLSX.utils.sheet_to_json(worksheet, {header: 1, raw: true});
   if (!data || data.length < 2) return {headers: [], rows: []};
 
   const headers = data[0].map((h) => String(h || '').trim());
-  const rows = data.slice(1).map((row) => {
-    const obj = {};
-    headers.forEach((h, i) => {
-      if (h) obj[h] = cellToText(row[i]);
+  if (!headers.some((h) => h)) return {headers: [], rows: []};
+
+  const rows = data
+    .slice(1)
+    // Skip completely empty rows.
+    .filter((row) => row && row.some((cell) => cell != null && cell !== ''))
+    .map((row) => {
+      const obj = {};
+      headers.forEach((h, i) => {
+        if (h) obj[h] = cellToText(row[i]);
+      });
+      return obj;
     });
-    return obj;
-  });
   return {headers, rows};
 }
 
