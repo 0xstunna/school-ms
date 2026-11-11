@@ -1,3 +1,6 @@
 .env
 node_modules
 dist
+# emulator/debug output
+*.log
+rules_test_output.txt
