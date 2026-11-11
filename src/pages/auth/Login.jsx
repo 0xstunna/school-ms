@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext.jsx';
 import { useNavigate } from 'react-router-dom';
 import Button from '../../components/common/Button.jsx';
 import { Input } from '../../components/common/Input.jsx';
+import { authErrorMessage } from '../../lib/authErrors.js';
 
 const Login = ({ schoolName }) => {
   const { login } = useAuth();
@@ -25,7 +26,7 @@ const Login = ({ schoolName }) => {
       await login(email, password);
       navigate('/', { replace: true });
     } catch (err) {
-      setError(err.message || 'Login failed. Please try again.');
+      setError(authErrorMessage(err));
     } finally {
       setLoading(false);
     }
