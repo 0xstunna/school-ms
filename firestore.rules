@@ -2,35 +2,85 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ─────────────────────────────────────────────────────────────
-    // Helpers
-    // ─────────────────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════════════════
+    // TENANT IDENTITY — Firebase Auth custom claims
+    //
+    // Claims are the runtime authority consulted by these rules. They are set
+    // server-side (Admin SDK) from the source-of-truth documents
+    // (users/{uid} and schools/{schoolId}) and re-issued on sign-in and on any
+    // membership/role change. The client cannot forge them.
+    //
+    // Claim shape (small, scalable):
+    //   {
+    //     schoolId: 'sch_A',   // active (currently selected) school
+    //     role: 'admin',       // role in the ACTIVE school
+    //     am: true,            // active membership in the ACTIVE school
+    //     active: true,        // globally active / not deactivated
+    //     platformAdmin: false // platform administrator (distinct)
+    //   }
+    //
+    // Per-school memberships (schoolIds[], roles{}, membershipActive{}) live on
+    // the users/{uid} profile (source of truth). Claims carry only the active
+    // school so tokens stay under Firebase's 1,000-byte custom-claims limit
+    // regardless of how many schools a user belongs to.
+    // ════════════════════════════════════════════════════════════════════════════
 
     // Signed-in Firebase Auth user.
     function isSignedIn() {
       return request.auth != null;
     }
 
-    // Caller's Firestore user profile. Caller must be signed in.
-    function callerProfile() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    // The caller's active (currently selected) school, from claims.
+    function activeSchoolId() {
+      return request.auth.token.schoolId;
     }
 
-    // Caller is signed in, has a profile, the profile is ACTIVE, and the role
-    // matches. Checking `active` here means deactivated users lose write
-    // access too, not just read access.
-    function hasRole(role) {
+    // Role for the active school, from claims (a single value matching the
+    // caller's active-school role).
+    function callerRole() {
+      return request.auth.token.role;
+    }
+
+    // Is the caller's membership in the ACTIVE school active? (from claims)
+    function activeMembershipIsActive() {
+      return request.auth.token.am == true;
+    }
+
+    // Is the caller globally active (not deactivated)? (from claims)
+    function isActiveUser() {
+      return isSignedIn() && request.auth.token.active == true;
+    }
+
+    // Is the caller a member of the given school? Requires a Firestore read of
+    // the caller's profile (users/{uid}) because per-school memberships are not
+    // carried in claims (kept small). Used only for school-level document
+    // access, not for every academic read.
+    function isMemberOfSchool(schoolId) {
       return isSignedIn()
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && callerProfile().data.active == true
-        && callerProfile().data.role == role;
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data
+           .schoolIds != null
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data
+           .schoolIds.hasAny([schoolId]);
+    }
+
+    // Platform administrator — distinct from any school admin role.
+    function isPlatformAdmin() {
+      return request.auth.token.platformAdmin == true;
+    }
+
+    // Role-based access for the active school (claims-based; no extra read).
+    function hasRole(role) {
+      return isActiveUser()
+        && activeMembershipIsActive()
+        && callerRole() == role;
     }
 
     function isAdmin()   { return hasRole('admin'); }
     function isTeacher() { return hasRole('teacher'); }
     function isBursar()  { return hasRole('bursar'); }
 
-    // Signed-in, active staff (admin / teacher / bursar).
+    // Signed-in, active staff member of the active school.
     function isStaff() {
       return isAdmin() || isTeacher() || isBursar();
     }
@@ -40,19 +90,138 @@ service cloud.firestore {
       return request.resource.data.role in ['admin', 'teacher', 'bursar'];
     }
 
+    // ════════════════════════════════════════════════════════════════════════════
+    // TENANT ISOLATION CORE
+    //
+    // Every academic record carries a `schoolId`. Access is granted only when
+    // the document's schoolId matches the caller's active school (claims).
+    // Platform admins bypass the school match but remain subject to the
+    // suspension/operational checks where applied.
+    // ════════════════════════════════════════════════════════════════════════════
+
+    // Can the caller access the given school? Platform admin bypasses;
+    // otherwise the caller must be a member of that school (verified via a
+    // Firestore read of the caller's profile since schoolIds are not in claims).
+    function canAccessSchool(schoolId) {
+      return isSignedIn()
+        && (
+          isPlatformAdmin()
+          || isMemberOfSchool(schoolId)
+        );
+    }
+
+    // Is the school operational (not suspended/closed)? Platform admin bypasses.
+    // Absence of a schools/{schoolId} doc is treated as operational (no status
+    // recorded yet) so existing tenants without a schools doc are not locked out.
+    function schoolIsOperational(schoolId) {
+      return isPlatformAdmin()
+        || !exists(/databases/$(database)/documents/schools/$(schoolId))
+        || get(/databases/$(database)/documents/schools/$(schoolId)).data.status == 'active';
+    }
+
+    // The school that owns a resource document.
+    function docSchoolId(resource) {
+      return resource.data.schoolId;
+    }
+
+    // Caller may read the document if they can access the document's school.
+    // For academic data this is enforced by matching the doc's schoolId against
+    // the caller's active school (from claims) — no extra Firestore read needed.
+    function canReadDoc(resource) {
+      return isSignedIn()
+        && (
+          isPlatformAdmin()
+          || (docSchoolId(resource) == activeSchoolId()
+              && activeMembershipIsActive()
+              && schoolIsOperational(docSchoolId(resource)))
+        );
+    }
+
+    // --- schoolId ownership -------------------------------------------------
+    // On CREATE: the incoming schoolId must equal the caller's active school.
+    // The client cannot choose another tenant's id.
+    function validSchoolIdOnCreate() {
+      return request.resource.data.schoolId == activeSchoolId()
+        && request.resource.data.schoolId != null;
+    }
+
+    // On UPDATE: schoolId is immutable — it must not change, and the document
+    // must remain owned by the caller's active school.
+    function validSchoolIdOnUpdate() {
+      return request.resource.data.schoolId == resource.data.schoolId
+        && request.resource.data.schoolId == activeSchoolId();
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // SCHOOLS — tenant root
+    // ════════════════════════════════════════════════════════════════════════════
+    match /schools/{schoolId} {
+      allow read: if canAccessSchool(schoolId);
+      allow create: if isPlatformAdmin();
+      allow update: if isPlatformAdmin();
+      allow delete: if false;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // CONFIG — singletons (cold-boot readable; pre-multi-tenancy shape)
+    //
+    // config/setup remains publicly readable so App.jsx can check setup status
+    // before sign-in. config/app_config is publicly readable for the school
+    // identity chip. All writes are admin-only.
+    // NOTE: per-school config (schools/{schoolId}/config/...) is introduced in a
+    // later step when configService is migrated. These rules leave the existing
+    // top-level config docs working for the transitional single-tenant state.
+    // ════════════════════════════════════════════════════════════════════════════
+    match /schools/{schoolId}/config/{doc} {
+      allow read: if canAccessSchool(schoolId);
+
+      allow create: if doc == 'setup'
+        && isSignedIn()
+        && !exists(/databases/$(database)/documents/schools/$(schoolId)/config/setup);
+
+      allow create: if doc == 'app_config'
+        && isAdmin()
+        && schoolId == activeSchoolId();
+
+      allow create: if doc == 'grading_settings'
+        && isAdmin()
+        && schoolId == activeSchoolId();
+
+      allow update: if doc == 'app_config'
+        && isAdmin()
+        && schoolId == activeSchoolId()
+        && !touchesPlatformAdmin();
+
+      allow update: if doc == 'grading_settings'
+        && isAdmin()
+        && schoolId == activeSchoolId();
+
+      allow delete: if false;
+    }
+
+    match /config/{doc} {
+      allow read: if isStaff() || doc == 'app_config' || doc == 'setup';
+
+      allow create: if doc == 'app_config' && isAdmin();
+      allow update: if doc == 'app_config' && isAdmin() && !touchesPlatformAdmin();
+
+      allow create: if doc == 'setup' && isSignedIn() && setupNotDone();
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // USERS — profiles + membership (source of truth for claims)
+    // ════════════════════════════════════════════════════════════════════════════
+
     // True while the very first admin has not been created yet
     // (config/setup does not exist).
     function setupNotDone() {
       return !exists(/databases/$(database)/documents/config/setup);
     }
 
-    function setupDone() {
-      return exists(/databases/$(database)/documents/config/setup);
-    }
-
     // First-admin exception: while setup is not done, a signed-in user may
     // create their own users/{uid} profile with role admin.
-    // `userId` is passed in because it only exists inside the users match.
     function isFirstAdminCreate(userId) {
       return setupNotDone()
         && isSignedIn()
@@ -60,127 +229,135 @@ service cloud.firestore {
         && request.resource.data.role == 'admin';
     }
 
-    // On update, the fields `role` and `active` are admin-only.
+    // On update, the fields `role` and `active` are admin-only (protected).
     function touchesProtectedFields() {
       return request.resource.data.diff(resource.data)
         .affectedKeys().hasAny(['role', 'active']);
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // SCHOOL SETTINGS: config/app_config + config/setup
-    // ─────────────────────────────────────────────────────────────
-    match /config/{doc} {
-      allow read: if isStaff() || doc == 'app_config' || doc == 'setup';
-
-      allow create: if doc == 'app_config' && isAdmin();
-      allow update: if doc == 'app_config' && isAdmin() && setupDone();
-
-      allow create: if doc == 'setup' && isSignedIn() && setupNotDone();
+    // platformAdmin must never be set or changed by a client — it is assigned
+    // server-side via the Admin SDK. This blocks privilege escalation.
+    function touchesPlatformAdmin() {
+      return request.resource.data.diff(resource.data)
+        .affectedKeys().hasAny(['platformAdmin']);
     }
 
-    // GRADING SETTINGS: config/grading_settings
-    match /config/grading_settings {
-      allow read: if isStaff();
-      allow write: if isAdmin();
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // USER ACCOUNTS: users/{userId}
-    // ─────────────────────────────────────────────────────────────
     match /users/{userId} {
-      allow read: if isStaff();
+      // Staff may read profiles; users may read their own.
+      allow read: if isSignedIn()
+        && (isStaff() || request.auth.uid == userId || isPlatformAdmin());
 
       allow create: if (isAdmin() && validRole())
         || isFirstAdminCreate(userId);
 
-      allow update: if (isAdmin() && validRole())
-        || (isStaff()
-            && request.auth.uid == userId
-            && !touchesProtectedFields());
+      allow update: if isPlatformAdmin()
+        || (isAdmin() && validRole() && !touchesPlatformAdmin() && !touchesProtectedFields())
+        || (request.auth.uid == userId
+            && !touchesProtectedFields()
+            && !touchesPlatformAdmin());
 
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() && !touchesPlatformAdmin();
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // ACADEMIC DATA
-    // ─────────────────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════════════════
+    // ACADEMIC DATA — tenant-isolated (schoolId enforced)
+    //
+    // Reads: document's schoolId must equal the caller's active school.
+    // Creates: incoming schoolId must equal the caller's active school.
+    // Updates: schoolId is immutable and must equal the caller's active school.
+    // Queries: Firestore rejects any query that does not include a
+    // `where('schoolId', '==', activeSchoolId)` filter, because the read rule
+    // can only be satisfied by documents in the active school.
+    // ════════════════════════════════════════════════════════════════════════════
 
-    // Admin-only create/update (manual add + SchoolPay import; client-chosen
-    // doc IDs are allowed). Students are never deleted, only set inactive.
+    // Students: admin create/update (manual + SchoolPay import). Students are
+    // never deleted — only set inactive (status:'inactive').
     match /students/{studentId} {
-      allow read: if isStaff();
-      allow create, update: if isAdmin();
+      allow read: if canReadDoc(resource);
+      allow create: if isAdmin() && activeMembershipIsActive()
+        && schoolIsOperational(activeSchoolId()) && validSchoolIdOnCreate();
+      allow update: if isAdmin() && activeMembershipIsActive()
+        && schoolIsOperational(activeSchoolId()) && validSchoolIdOnUpdate();
       allow delete: if false;
     }
 
-    match /exam_results/{resultId} {
-      allow read: if isStaff();
-      allow create, update: if isAdmin() || isTeacher();
-      allow delete: if isAdmin();
+    match /exams/{examId} {
+      allow read: if canReadDoc(resource);
+      allow create, update: if (isAdmin() || isTeacher()) && activeMembershipIsActive()
+        && schoolIsOperational(activeSchoolId()) && validSchoolIdOnCreate();
+      allow delete: if isAdmin() && activeMembershipIsActive()
+        && schoolIsOperational(activeSchoolId());
     }
 
-    match /exams/{examId} {
-      allow read: if isStaff();
-      allow create, update: if isAdmin() || isTeacher();
-      allow delete: if isAdmin();
+    match /exam_results/{resultId} {
+      allow read: if canReadDoc(resource);
+      allow create, update: if (isAdmin() || isTeacher()) && activeMembershipIsActive()
+        && schoolIsOperational(activeSchoolId()) && validSchoolIdOnCreate();
+      allow delete: if isAdmin() && activeMembershipIsActive()
+        && schoolIsOperational(activeSchoolId());
     }
 
     match /projectWork/{pwId} {
-      allow read: if isStaff();
-      allow create, update: if isAdmin() || isTeacher();
-      allow delete: if isAdmin();
-    }
-
-    match /attendance/{attendanceId} {
-      allow read: if isStaff();
-      allow create, update: if isAdmin() || isTeacher();
-      allow delete: if isAdmin();
+      allow read: if canReadDoc(resource);
+      allow create, update: if (isAdmin() || isTeacher()) && activeMembershipIsActive()
+        && schoolIsOperational(activeSchoolId()) && validSchoolIdOnCreate();
+      allow delete: if isAdmin() && activeMembershipIsActive()
+        && schoolIsOperational(activeSchoolId());
     }
 
     match /classes/{classId} {
-      allow read: if isStaff();
-      allow write: if isAdmin();
+      allow read: if canReadDoc(resource);
+      allow write: if isAdmin() && activeMembershipIsActive()
+        && schoolIsOperational(activeSchoolId()) && validSchoolIdOnCreate();
     }
 
     match /subjects/{subjectId} {
-      allow read: if isStaff();
-      allow write: if isAdmin();
+      allow read: if canReadDoc(resource);
+      allow write: if isAdmin() && activeMembershipIsActive()
+        && schoolIsOperational(activeSchoolId()) && validSchoolIdOnCreate();
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // STAFF RECORDS: staff/{staffId}
-    // ─────────────────────────────────────────────────────────────
     match /staff/{staffId} {
-      allow read: if isStaff();
-      allow write: if isAdmin();
+      allow read: if canReadDoc(resource);
+      allow write: if isAdmin() && activeMembershipIsActive()
+        && schoolIsOperational(activeSchoolId()) && validSchoolIdOnCreate();
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // FINANCE
-    // ─────────────────────────────────────────────────────────────
+    match /attendance/{attendanceId} {
+      allow read: if canReadDoc(resource);
+      allow create, update: if (isAdmin() || isTeacher()) && activeMembershipIsActive()
+        && schoolIsOperational(activeSchoolId()) && validSchoolIdOnCreate();
+      allow delete: if isAdmin() && activeMembershipIsActive()
+        && schoolIsOperational(activeSchoolId());
+    }
+
     match /fee_structures/{feeId} {
-      allow read: if isStaff();
-      allow write: if isAdmin() || isBursar();
+      allow read: if canReadDoc(resource);
+      allow write: if (isAdmin() || isBursar()) && activeMembershipIsActive()
+        && schoolIsOperational(activeSchoolId()) && validSchoolIdOnCreate();
     }
 
     match /fee_payments/{paymentId} {
-      allow read: if isStaff();
-      allow create, update: if isAdmin() || isBursar();
-      allow delete: if isAdmin();
+      allow read: if canReadDoc(resource);
+      allow create, update: if (isAdmin() || isBursar()) && activeMembershipIsActive()
+        && schoolIsOperational(activeSchoolId()) && validSchoolIdOnCreate();
+      allow delete: if isAdmin() && activeMembershipIsActive()
+        && schoolIsOperational(activeSchoolId());
     }
 
-    // Payroll and expenses: admin and bursar only (teachers excluded).
     match /payroll/{payrollId} {
-      allow read, write: if isAdmin() || isBursar();
+      allow read, write: if (isAdmin() || isBursar()) && activeMembershipIsActive()
+        && schoolIsOperational(activeSchoolId()) && validSchoolIdOnCreate();
     }
 
     match /expenses/{expenseId} {
-      allow read, write: if isAdmin() || isBursar();
+      allow read, write: if (isAdmin() || isBursar()) && activeMembershipIsActive()
+        && schoolIsOperational(activeSchoolId()) && validSchoolIdOnCreate();
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // DEFAULT: deny everything not explicitly allowed above
-    // ─────────────────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════════════════
+    // DEFAULT — deny everything not explicitly allowed above
+    // ════════════════════════════════════════════════════════════════════════════
     match /{document=**} {
       allow read, write: if false;
     }

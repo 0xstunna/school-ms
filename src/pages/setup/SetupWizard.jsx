@@ -1,12 +1,18 @@
 import { useState } from 'react';
 import { User, CheckCircle2, ChevronRight, ChevronLeft, Eye, EyeOff } from 'lucide-react';
 import AlamaLogo from '../../components/common/AlamaLogo.jsx';
-import { createConfig, isSetupComplete } from '../../db/configService.js';
-import { createFirstAdmin } from '../../db/userService.js';
+import { useAuth } from '../../contexts/AuthContext.jsx';
 import { TERMS } from '../../utils/constants.js';
 import { generateAcademicYears } from '../../utils/grading.js';
 import Button from '../../components/common/Button.jsx';
 import { Input, Select, FormRow } from '../../components/common/Input.jsx';
+import { authErrorMessage } from '../../lib/authErrors.js';
+
+// Trusted server-side onboarding endpoint (src/server/index.js).
+// Configure via VITE_ONBOARD_SCHOOL_ENDPOINT; defaults to a relative route.
+const ONBOARD_SCHOOL_ENDPOINT =
+  (import.meta.env?.VITE_ONBOARD_SCHOOL_ENDPOINT && String(import.meta.env.VITE_ONBOARD_SCHOOL_ENDPOINT)) ||
+  '/api/onboard-school';
 
 const STEPS = [
   { id: 'school', label: 'School Profile', icon: AlamaLogo },
@@ -14,11 +20,28 @@ const STEPS = [
   { id: 'done',   label: 'Complete',       icon: CheckCircle2 },
 ];
 
+/** Client-generated idempotency key so repeat submissions don't duplicate schools. */
+function makeIdempotencyKey() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // Fallback for environments without crypto.randomUUID.
+  return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
+}
+
 const SetupWizard = ({ onComplete }) => {
+  const { login } = useAuth();
   const [step, setStep]       = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
   const [showPw, setShowPw]   = useState(false);
+  // Idempotency key is generated once per wizard session so a page refresh
+  // mid-onboarding resubmits the same key and the server returns the existing
+  // school instead of creating a duplicate.
+  const [idempotencyKey] = useState(makeIdempotencyKey);
+  // Server-issued school ID captured once onboarding succeeds; used to hand
+  // the new school off to the app when the user opens the dashboard.
+  const [schoolId, setSchoolId] = useState('');
 
   const years = generateAcademicYears();
 
@@ -62,28 +85,53 @@ const SetupWizard = ({ onComplete }) => {
       if (err) { setError(err); return; }
       setLoading(true);
       try {
-        // If setup was already completed (e.g. page refreshed mid-wizard),
-        // skip straight to the done step instead of re-creating everything.
-        const alreadyDone = await isSetupComplete();
-        if (alreadyDone) {
-          setStep(2);
-          return;
+        // Send school + admin data to the trusted server-side onboarding
+        // endpoint. The server generates the definitive school ID (never a
+        // slug derived from the name), creates the school record, the first
+        // administrator account, the membership, the active-school claims and
+        // the school-specific configuration — all with rollback on failure.
+        const schoolPayload = {
+          schoolName:    schoolData.schoolName,
+          schoolEmail:   schoolData.schoolEmail,
+          schoolAddress: schoolData.schoolAddress,
+          schoolPhone:   schoolData.schoolPhone,
+          academicYear:  schoolData.academicYear,
+          currentTerm:   schoolData.currentTerm,
+          plan:          'trial', // billing deferred to a later milestone
+          adminFullName: adminData.fullName,
+          adminEmail:    adminData.email,
+          adminPassword: adminData.password,
+        };
+
+        const resp = await fetch(ONBOARD_SCHOOL_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ schoolData: schoolPayload, idempotencyKey }),
+        });
+        const json = await resp.json();
+        if (!resp.ok) {
+          throw new Error(json.error || 'Onboarding rejected by server.');
         }
 
-        // createFirstAdmin creates the Firebase Auth account (or signs in if
-        // it already exists from an interrupted earlier attempt), then writes
-        // the Firestore profile. Only after that is the user authenticated,
-        // so the config write below is allowed by Firestore rules.
-        await createFirstAdmin(adminData);
-        await createConfig(schoolData);
+        const serverSchoolId = json.schoolId;
+        if (!serverSchoolId || typeof serverSchoolId !== 'string') {
+          throw new Error('Server did not return a school ID.');
+        }
+
+        // Sign in the newly created administrator so the session carries the
+        // server-issued active-school claims. initializeUserSession refreshes
+        // the ID token so Firestore rule evaluation uses the new active school.
+        await login(adminData.email, adminData.password);
+
+        setSchoolId(serverSchoolId);
         setStep(2);
+        onComplete(serverSchoolId);
       } catch (e) {
-        const msg = e.message || 'Setup failed. Please try again.';
-        // Give a helpful hint for the two most common setup errors.
-        if (e.code === 'auth/email-already-in-use') {
-          setError('An account with this email already exists. If you were mid-setup, click "Complete Setup" again — the existing account will be reused.');
-        } else if (e.code === 'permission-denied') {
-          setError('Missing or insufficient permissions to write school data. Please verify your Firebase Firestore rules allow authenticated writes, then click "Complete Setup" again.');
+        const msg = authErrorMessage(e) || 'Setup failed. Please try again.';
+        if (msg.includes('already exists')) {
+          setError('An account or school with these details already exists. If you were mid-setup, click "Complete Setup" again — the existing school will be reused.');
+        } else if (msg.includes('Failed to fetch') || msg.includes('network')) {
+          setError('Could not reach the setup server. Please verify the server is running (see SETUP.md) and try again.');
         } else {
           setError(msg);
         }
@@ -219,7 +267,7 @@ const SetupWizard = ({ onComplete }) => {
                 {step === 1 ? 'Complete Setup' : 'Continue'}
               </Button>
             ) : (
-              <Button variant="amber" onClick={onComplete}>
+              <Button variant="amber" onClick={() => onComplete(schoolId || '')}>
                 Open Dashboard →
               </Button>
             )}

@@ -5,6 +5,7 @@ import { CLASSES } from '../../utils/constants.js';
 import Button from '../../components/common/Button.jsx';
 import Modal, { ConfirmModal } from '../../components/common/Modal.jsx';
 import { Input, FormRow } from '../../components/common/Input.jsx';
+import { authErrorMessage } from '../../lib/authErrors.js';
 import { EmptyState, PageHeader, Card, Badge, LoadingScreen } from '../../components/common/Badge.jsx';
 
 const EMPTY = { name: '', code: '', applicableClasses: [], outOf: '100' };
@@ -47,7 +48,7 @@ const SubjectModal = ({ open, onClose, onSave, existing }) => {
     try {
       await onSave({ ...form, outOf: Number(form.outOf) || 100 });
       onClose();
-    } catch (e) { setError(e.message); }
+    } catch (e) { setError(authErrorMessage(e)); }
     finally { setLoading(false); }
   };
 

@@ -9,6 +9,7 @@ import Button from '../../components/common/Button.jsx';
 import Modal, { ConfirmModal } from '../../components/common/Modal.jsx';
 import { Input, Select, FormRow } from '../../components/common/Input.jsx';
 import { Badge, EmptyState, PageHeader, Card, LoadingScreen } from '../../components/common/Badge.jsx';
+import { authErrorMessage } from '../../lib/authErrors.js';
 
 const EMPTY_FORM = {
   fullName: '', email: '', password: '', confirmPassword: '',
@@ -55,7 +56,7 @@ const UserModal = ({ open, onClose, onSave, existing }) => {
       await onSave(form);
       onClose();
     } catch (e) {
-      setError(e.message || 'Failed to save user.');
+      setError(authErrorMessage(e) || 'Failed to save user.');
     } finally {
       setLoading(false);
     }
@@ -167,7 +168,7 @@ const UserManagement = () => {
       }
       await load();
     } catch (e) {
-      alert(e.message);
+      alert(authErrorMessage(e));
     } finally {
       setActionLoading(false);
       setConfirm(null);

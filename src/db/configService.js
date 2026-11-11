@@ -1,41 +1,87 @@
 import { safeGet, setDocument, updateDocument } from './firebase.js';
 
-const COL = 'config';
-const DOC = 'app_config';
-const SETUP_DOC = 'setup';
+// ─────────────────────────────────────────────────────────────────────────────
+// PER-SCHOOL CONFIGURATION
+//
+// Config is school-scoped: `schools/{schoolId}/config/{setup|app_config}`.
+// Each school has independent setup status, school profile, academic year, and
+// term. A school MUST read and write its own configuration.
+//
+// The top-level `config/` singleton fallback for CONFIG VALUES
+// (getConfig / getGradingSettings) has been REMOVED. Silent fallback to
+// another school's top-level configuration was a tenant-isolation risk: a
+// school whose per-school config was missing would read a different school's
+// settings. Missing school configuration now returns an explicit unconfigured
+// state instead.
+//
+// One exception: `isSetupComplete()` called with NO schoolId (cold boot before
+// any user is signed in) reads the top-level `config/setup` platform bootstrap
+// flag only. This is a one-time "has the platform been set up at all?" signal
+// used to decide whether to show the Setup Wizard on first launch. It is NOT a
+// per-school config value and does not read any school's configuration. Once a
+// schoolId is known, setup status is school-specific (per-school config/setup).
+//
+// Existing top-level `config/{doc}` documents are NOT deleted (preserving data
+// for a future migration), but they are no longer read as a fallback for config
+// values. See the Milestone 2.2 completion report for the documented migration
+// strategy.
+//
+// All functions take `schoolId` as a required parameter.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const COL_CONFIG   = 'config';
+const COL_SCHOOLS  = 'schools';
+const DOC_SETUP    = 'setup';
+const DOC_APP_CFG  = 'app_config';
+
+/** Per-school config subcollection path: schools/{schoolId}/config */
+function schoolConfigPath(schoolId) {
+  return `${COL_SCHOOLS}/${schoolId}/config`;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
-// READ  — isSetupComplete reads config/setup (the first-admin guard flag),
-//         which Firestore rules allow WITHOUT authentication so the app can
-//         check setup status on every cold boot before any user is signed in.
-//         getConfig reads config/app_config (school identity + settings).
+// READ — per-school only. Missing configuration returns an explicit
+// unconfigured state (null / false) rather than falling back to another
+// school's top-level configuration.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const isSetupComplete = async () => {
-  const setup = await safeGet(COL, SETUP_DOC);   // reads  →  config/setup
+/**
+ * Returns true only when the given school's per-school setup doc exists and
+ * marks setup complete. When called with no schoolId (cold boot before
+ * sign-in), reads the top-level config/setup platform bootstrap flag so
+ * existing single-school installations are not sent back through the wizard.
+ */
+export const isSetupComplete = async (schoolId) => {
+  if (schoolId) {
+    const setup = await safeGet(schoolConfigPath(schoolId), DOC_SETUP);
+    return setup?.setupComplete === true;
+  }
+  // Cold-boot platform bootstrap flag: has ANY school been set up yet?
+  const setup = await safeGet(COL_CONFIG, DOC_SETUP);
   return setup?.setupComplete === true;
 };
 
-export const getConfig = async () => {
-  return await safeGet(COL, DOC);                // reads  →  config/app_config
+/**
+ * Returns the school's per-school app_config document, or null when the
+ * school is not yet configured. Never falls back to top-level config/app_config.
+ * Callers must handle the null (unconfigured) state explicitly.
+ */
+export const getConfig = async (schoolId) => {
+  if (!schoolId) return null;
+  const cfg = await safeGet(schoolConfigPath(schoolId), DOC_APP_CFG);
+  return cfg || null;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// WRITE — createConfig writes config/app_config (school identity/settings).
-//         setupComplete is NO LONGER stored here — it lives on config/setup,
-//         written atomically with the first admin profile in
-//         createFirstAdmin() (userService.js). createConfig is called after
-//         createFirstAdmin(), when the admin is already signed in, so the
-//         admin-only write rule passes.
+// WRITE — createConfig / updateConfig write to the per-school config doc.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const createConfig = async (data) => {
+export const createConfig = async (schoolId, data) => {
+  if (!schoolId) throw new Error('schoolId is required to create config.');
   const now = new Date().toISOString();
-
-  // Renamed from 'doc' to 'configData' — avoids shadowing the doc() helper
-  // if it were ever imported from firebase/firestore in the future.
   const configData = {
     type:          'config',
+    schoolId,
     schoolName:    data.schoolName,
     schoolMotto:   data.schoolMotto   || '',
     schoolAddress: data.schoolAddress || '',
@@ -46,15 +92,15 @@ export const createConfig = async (data) => {
     createdAt:     now,
     updatedAt:     now,
   };
-
-  return await setDocument(COL, DOC, configData); // writes → config/app_config
+  return await setDocument(schoolConfigPath(schoolId), DOC_APP_CFG, configData);
 };
 
-export const updateConfig = async (data) => {
+export const updateConfig = async (schoolId, data) => {
+  if (!schoolId) throw new Error('schoolId is required to update config.');
   const updates = {
     ...data,
     updatedAt: new Date().toISOString(),
   };
-  await updateDocument(COL, DOC, updates);
-  return await safeGet(COL, DOC);
+  await updateDocument(schoolConfigPath(schoolId), DOC_APP_CFG, updates);
+  return await safeGet(schoolConfigPath(schoolId), DOC_APP_CFG);
 };

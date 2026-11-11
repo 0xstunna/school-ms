@@ -26,22 +26,23 @@ import { getGradingSystem, ASSESSMENT_MODES } from '../gradingSystems/index.js';
 const CA_EXAM_TYPES = ['CAT', 'Midterm'];
 const EXAM_EXAM_TYPES = ['Final'];
 
-export const computeResultsForClass = async ({ classLevel, academicYear, term, streamFilter = null } = {}) => {
+export const computeResultsForClass = async ({ classLevel, academicYear, term, streamFilter = null, schoolId } = {}) => {
+  if (!schoolId) throw new Error('schoolId is required to compute results for a class.');
   const streamParam = !streamFilter || streamFilter === 'all' ? undefined : streamFilter.replace(classLevel, '');
 
   const [studentsAll, allExams] = await Promise.all([
-    getStudents({ classLevel, stream: streamParam }),
-    getExams({ academicYear, term }),
+    getStudents({ schoolId, classLevel, stream: streamParam }),
+    getExams({ schoolId, academicYear, term }),
   ]);
 
   // If streamFilter is 'all' or null, get all students in the class across all streams
   let students = studentsAll;
   if (!streamFilter || streamFilter === 'all') {
-    students = (await getStudents({ classLevel })).filter((s) => s.status === 'active' || s.status !== 'inactive');
+    students = (await getStudents({ schoolId, classLevel })).filter((s) => s.status === 'active' || s.status !== 'inactive');
     // if some systems mark inactive differently, include all active; be defensive
-    if (students.length === 0) {
-      students = await getStudents({ classLevel });
-    }
+     if (students.length === 0) {
+       students = await getStudents({ schoolId, classLevel });
+     }
   } else {
     students = studentsAll;
   }
@@ -69,10 +70,10 @@ export const computeResultsForClass = async ({ classLevel, academicYear, term, s
   }
 
   // ── Resolve the grading system for this class ───────────────────────────
-  const config = await getConfig();
+  const config = await getConfig(schoolId);
   const currentAcademicYear = config?.academicYear || academicYear;
   const classConfig = academicYear ? await getClassConfig(classLevel, academicYear) : null;
-  const settings = await getGradingSettings();
+  const settings = await getGradingSettings(schoolId);
 
   const gradingSystem = getGradingSystem({
     classLevel,
@@ -83,7 +84,7 @@ export const computeResultsForClass = async ({ classLevel, academicYear, term, s
   });
   const isNlsc = gradingSystem.mode === ASSESSMENT_MODES.NLSC;
 
-  const resultArrays = await Promise.all(classExams.map((e) => getResultsForExam(e.id)));
+  const resultArrays = await Promise.all(classExams.map((e) => getResultsForExam(e.id, schoolId)));
   const resultsByExam = {};
   classExams.forEach((exam, i) => {
     resultsByExam[exam.id] = {};

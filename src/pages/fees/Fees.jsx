@@ -13,6 +13,7 @@ import { formatCurrency, formatDate, getCurrentDateISO } from '../../utils/gradi
 import Button from '../../components/common/Button.jsx';
 import Modal from '../../components/common/Modal.jsx';
 import { Input, Select, Textarea, FormRow } from '../../components/common/Input.jsx';
+import { authErrorMessage } from '../../lib/authErrors.js';
 import {
   EmptyState, PageHeader, Card, Badge, LoadingScreen, StatCard,
 } from '../../components/common/Badge.jsx';
@@ -308,7 +309,7 @@ const EMPTY_FORM = () => ({
   notes:            '',
 });
 
-const PaymentModal = ({ open, onClose, onSave, config, surConfig, selectedTerm, selectedYear }) => {
+const PaymentModal = ({ open, onClose, onSave, config, surConfig, selectedTerm, selectedYear, schoolId }) => {
   const [search, setSearch]                 = useState('');
   const [suggestions, setSug]               = useState([]);
   const [selected, setSelected]             = useState(null);
@@ -327,9 +328,9 @@ const PaymentModal = ({ open, onClose, onSave, config, surConfig, selectedTerm, 
   }, [open]);
 
   useEffect(() => {
-    if (search.length < 2) { setSug([]); return; }
-    getStudents({ search }).then(setSug);
-  }, [search]);
+    if (search.length < 2 || !schoolId) { setSug([]); return; }
+    getStudents({ schoolId, search }).then(setSug);
+  }, [search, schoolId]);
 
   useEffect(() => {
     if (!selected || !config) return;
@@ -371,7 +372,7 @@ const PaymentModal = ({ open, onClose, onSave, config, surConfig, selectedTerm, 
         ...(includeSur && surAmt > 0 ? { surchargeApplied: surAmt } : {}),
       });
       onClose();
-    } catch (e) { setError(e.message); }
+    } catch (e) { setError(authErrorMessage(e)); }
     finally     { setLoading(false); }
   };
 
@@ -617,7 +618,7 @@ const STATUS_FILTERS = [
 // ─────────────────────────────────────────────────────────────────────────────
 
 const Fees = () => {
-  const { user } = useAuth();
+  const { user, activeSchoolId } = useAuth();
 
   const [config, setConfig]         = useState(null);
   const [configLoading, setCfgLoad] = useState(true);
@@ -641,7 +642,8 @@ const Fees = () => {
   const [tableLoading, setTLoad] = useState(false);
 
   useEffect(() => {
-    getConfig().then((cfg) => {
+    if (!activeSchoolId) return;
+    getConfig(activeSchoolId).then((cfg) => {
       setConfig(cfg);
       setSelectedTerm(cfg?.currentTerm  || TERMS[0]);
       setSelectedYear(cfg?.academicYear || '');
@@ -651,10 +653,11 @@ const Fees = () => {
   }, []);
 
   const loadTable = useCallback(async () => {
-    if (!config || !selectedTerm || !selectedYear) return;
+    if (!config || !selectedTerm || !selectedYear || !activeSchoolId) return;
     setTLoad(true);
     try {
       const students = await getStudents({
+        schoolId:   activeSchoolId,
         classLevel: filterClass  || undefined,
         stream:     filterStream || undefined,
         search:     search       || undefined,
@@ -686,7 +689,7 @@ const Fees = () => {
         };
       }));
     } finally { setTLoad(false); }
-  }, [config, filterClass, filterStream, search, surConfig, selectedTerm, selectedYear]);
+  }, [config, filterClass, filterStream, search, surConfig, selectedTerm, selectedYear, activeSchoolId]);
 
   useEffect(() => { loadTable(); }, [loadTable]);
 
@@ -994,6 +997,7 @@ const Fees = () => {
         open={modalOpen} onClose={() => setModalOpen(false)}
         onSave={handleRecordPayment} config={config} surConfig={surConfig}
         selectedTerm={selectedTerm} selectedYear={selectedYear}
+        schoolId={activeSchoolId}
       />
       <SurchargeModal
         open={surModalOpen} onClose={() => setSurModal(false)}

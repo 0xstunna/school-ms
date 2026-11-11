@@ -31,7 +31,7 @@ const QuickLink = ({ icon: Icon, label, path, color }) => {
 };
 
 const Dashboard = () => {
-  const { user, hasRole } = useAuth();
+  const { user, hasRole, activeSchoolId } = useAuth();
   const [stats, setStats] = useState(null);
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -39,10 +39,10 @@ const Dashboard = () => {
   useEffect(() => {
     const load = async () => {
       try {
-        const cfg = await getConfig();
+        const cfg = await getConfig(activeSchoolId);
         setConfig(cfg);
         const [students, staff, feeTotal, attendance] = await Promise.all([
-          getStudentCount(),
+          getStudentCount(activeSchoolId),
           isEnabled('staff') ? getStaffCount() : Promise.resolve(null),
           isEnabled('fees')
             ? getTermFeeCollection(cfg?.academicYear, cfg?.currentTerm)
@@ -59,7 +59,7 @@ const Dashboard = () => {
       }
     };
     load();
-  }, []);
+  }, [activeSchoolId]);
 
   if (loading) return <LoadingScreen message="Loading dashboard..." />;
 

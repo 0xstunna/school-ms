@@ -100,8 +100,8 @@ const App = () => {
     init();
   }, []);
 
-  const handleSetupComplete = async () => {
-    const cfg = await getConfig();
+  const handleSetupComplete = async (schoolId) => {
+    const cfg = await getConfig(schoolId);
     setSchoolName(cfg?.schoolName || '');
     setSetupDone(true);
   };

@@ -18,7 +18,7 @@ const STATUS_CONFIG = {
 };
 
 const Attendance = () => {
-  const { user } = useAuth();
+  const { user, activeSchoolId } = useAuth();
   const [date, setDate]           = useState(getCurrentDateISO());
   const [classLevel, setClassLevel] = useState('S1');
   const [stream, setStream]       = useState('A');
@@ -30,16 +30,18 @@ const Attendance = () => {
   const [saved, setSaved]         = useState(false);
 
   useEffect(() => {
-    getConfig().then(setConfig);
-  }, []);
+    if (!activeSchoolId) return;
+    getConfig(activeSchoolId).then(setConfig);
+  }, [activeSchoolId]);
 
   const load = useCallback(async () => {
+    if (!activeSchoolId) return;
     setLoading(true);
     setSaved(false);
     try {
       const classStream = `${classLevel}${stream}`;
       const [studentList, existing] = await Promise.all([
-        getStudents({ classLevel, stream, status: 'active' }),
+        getStudents({ schoolId: activeSchoolId, classLevel, stream, status: 'active' }),
         getAttendanceSession(date, classStream),
       ]);
       setStudents(studentList);
@@ -53,7 +55,7 @@ const Attendance = () => {
         setRecords(defaultMap);
       }
     } finally { setLoading(false); }
-  }, [date, classLevel, stream]);
+  }, [date, classLevel, stream, activeSchoolId]);
 
   useEffect(() => { load(); }, [load]);
 

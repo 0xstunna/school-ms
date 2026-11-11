@@ -32,9 +32,11 @@ import { getGradingSettings } from './gradingSettingsService.js';
 
 /**
  * Read every collection to back up and return a JSON-ready object.
+ * `schoolId` is required — student and exam reads are scoped to the active school.
  * Throws if any read fails (caller surfaces the error to the admin).
  */
-export const exportData = async () => {
+export const exportData = async (schoolId) => {
+  if (!schoolId) throw new Error('schoolId is required to export data.');
   const [
     students,
     exams,
@@ -42,11 +44,11 @@ export const exportData = async () => {
     config,
     gradingSettings,
   ] = await Promise.all([
-    getStudents(),
-    getExams(),
+    getStudents({ schoolId }),
+    getExams({ schoolId }),
     listClasses(),
-    getConfig(),
-    getGradingSettings().catch(() => null), // settings may not exist on a fresh DB
+    getConfig(schoolId),
+    getGradingSettings(schoolId).catch(() => null), // settings may not exist on a fresh DB
   ]);
 
   // exam_results has no dedicated "get all" getter — read the collection directly.

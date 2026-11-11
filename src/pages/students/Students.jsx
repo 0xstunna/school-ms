@@ -2,11 +2,13 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Plus, Search, Edit2, Trash2, GraduationCap, Users, AlertTriangle, BookOpen, TrendingUp } from 'lucide-react';
 import { getStudents, createStudent, updateStudent, deleteStudent } from '../../db/studentService.js';
 import { getConfig } from '../../db/configService.js';
+import { useAuth } from '../../contexts/AuthContext.jsx';
 import { CLASSES, STREAMS, GENDERS, GUARDIAN_RELATIONSHIPS, STUDENT_STATUSES } from '../../utils/constants.js';
 import { formatDate } from '../../utils/grading.js';
 import Button from '../../components/common/Button.jsx';
 import Modal, { ConfirmModal } from '../../components/common/Modal.jsx';
 import { Input, Select, Textarea, FormRow } from '../../components/common/Input.jsx';
+import { authErrorMessage } from '../../lib/authErrors.js';
 import {
   StatusBadge, EmptyState, PageHeader, Card, LoadingScreen, Badge, StatCard,
 } from '../../components/common/Badge.jsx';
@@ -73,7 +75,7 @@ const StudentModal = ({ open, onClose, onSave, existing }) => {
       await onSave(form);
       onClose();
     } catch (e) {
-      setError(e.message || 'Failed to save student.');
+      setError(authErrorMessage(e) || 'Failed to save student.');
     } finally { setLoading(false); }
   };
 
@@ -148,6 +150,7 @@ const StudentModal = ({ open, onClose, onSave, existing }) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const Students = () => {
+  const { activeSchoolId } = useAuth();
   const [config, setConfig]         = useState(null);
   const [configLoading, setCfgLoad] = useState(true);
 
@@ -168,7 +171,8 @@ const Students = () => {
 
   // Load config once; seed year selector
   useEffect(() => {
-    getConfig().then((cfg) => {
+    if (!activeSchoolId) return;
+    getConfig(activeSchoolId).then((cfg) => {
       setConfig(cfg);
       setSelectedYear(cfg?.academicYear || '');
       setYearOptions(buildYearOptions(cfg?.academicYear));
@@ -180,10 +184,11 @@ const Students = () => {
 
   // Load students filtered by selected year + optional class/stream/search
   const load = useCallback(async () => {
-    if (!selectedYear) return;
+    if (!selectedYear || !activeSchoolId) return;
     setLoading(true);
     try {
       const data = await getStudents({
+        schoolId:   activeSchoolId,
         academicYear: selectedYear,
         classLevel:   filterClass  || undefined,
         stream:       filterStream || undefined,
@@ -191,7 +196,7 @@ const Students = () => {
       });
       setStudents(data);
     } finally { setLoading(false); }
-  }, [selectedYear, filterClass, filterStream, search]);
+  }, [selectedYear, filterClass, filterStream, search, activeSchoolId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -219,8 +224,9 @@ const Students = () => {
   }, [students]);
 
   const handleSave = async (form) => {
-    if (editing) await updateStudent(editing.id, form);
-    else         await createStudent(form);
+    const payload = { ...form, schoolId: activeSchoolId };
+    if (editing) await updateStudent(editing.id, payload);
+    else         await createStudent(payload);
     await load();
   };
 

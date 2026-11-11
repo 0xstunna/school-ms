@@ -18,6 +18,7 @@ import Button from '../../components/common/Button.jsx';
 import Modal, { ConfirmModal } from '../../components/common/Modal.jsx';
 import { Input, Select, Textarea, FormRow } from '../../components/common/Input.jsx';
 import SchoolLogoUpload from '../../components/common/SchoolLogoUpload.jsx';
+import { authErrorMessage } from '../../lib/authErrors.js';
 import {
   StatusBadge, EmptyState, PageHeader, Card, Badge, LoadingScreen, StatCard,
 } from '../../components/common/Badge.jsx';
@@ -362,7 +363,7 @@ const StaffModal = ({ open, onClose, onSave, existing }) => {
     if (!form.fullName.trim()) { setError('Full name is required.'); return; }
     setLoading(true);
     try { await onSave(form); onClose(); }
-    catch (e) { setError(e.message); }
+    catch (e) { setError(authErrorMessage(e)); }
     finally { setLoading(false); }
   };
 
@@ -497,7 +498,7 @@ export const Staff = () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const Payroll = () => {
-  const { user } = useAuth();
+  const { user, activeSchoolId } = useAuth();
 
   const [entries, setEntries]   = useState([]);
   const [staff, setStaff]       = useState([]);
@@ -518,13 +519,14 @@ export const Payroll = () => {
   });
 
   useEffect(() => {
-    getConfig().then((cfg) => {
+    if (!activeSchoolId) return;
+    getConfig(activeSchoolId).then((cfg) => {
       setConfig(cfg);
       setSelectedTerm(cfg?.currentTerm || TERMS[0]);
       setSelectedYear(cfg?.academicYear || '');
       setYearOptions(buildYearOptions(cfg?.academicYear));
     });
-  }, []);
+  }, [activeSchoolId]);
 
   const loadEntries = useCallback(async () => {
     if (!selectedTerm || !selectedYear) return;
@@ -573,7 +575,7 @@ export const Payroll = () => {
       setModalOpen(false);
       // Auto-print receipt immediately after saving
       handlePrintReceipt(result);
-    } catch (e) { setFormError(e.message); }
+    } catch (e) { setFormError(authErrorMessage(e)); }
     finally { setSaving(false); }
   };
 
@@ -693,7 +695,7 @@ export const Payroll = () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const Expenses = () => {
-  const { user } = useAuth();
+  const { user, activeSchoolId } = useAuth();
 
   const [expenses, setExpenses]   = useState([]);
   const [config, setConfig]       = useState(null);
@@ -717,13 +719,14 @@ export const Expenses = () => {
   });
 
   useEffect(() => {
-    getConfig().then((cfg) => {
+    if (!activeSchoolId) return;
+    getConfig(activeSchoolId).then((cfg) => {
       setConfig(cfg);
       setSelectedTerm(cfg?.currentTerm || TERMS[0]);
       setSelectedYear(cfg?.academicYear || '');
       setYearOptions(buildYearOptions(cfg?.academicYear));
     });
-  }, []);
+  }, [activeSchoolId]);
 
   const loadExpenses = useCallback(async () => {
     if (!selectedTerm || !selectedYear) return;
@@ -750,7 +753,7 @@ export const Expenses = () => {
       await recordExpense({ ...form, academicYear: selectedYear, term: selectedTerm }, user.id);
       await loadExpenses();
       setModalOpen(false);
-    } catch (e) { setFormError(e.message); }
+    } catch (e) { setFormError(authErrorMessage(e)); }
     finally { setSaving(false); }
   };
 
@@ -900,7 +903,7 @@ export const Expenses = () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const Settings = () => {
-  const { user } = useAuth();
+  const { user, activeSchoolId } = useAuth();
   const [config, setConfig]   = useState(null);
   const [form, setForm]       = useState({});
   const [loading, setLoading] = useState(true);
@@ -922,7 +925,7 @@ export const Settings = () => {
     let cancelled = false;
     (async () => {
       try {
-        const [cfg, gs] = await Promise.all([getConfig(), getGradingSettings().catch(() => null)]);
+        const [cfg, gs] = await Promise.all([getConfig(activeSchoolId), getGradingSettings(activeSchoolId).catch(() => null)]);
         if (cancelled) return;
         setConfig(cfg);
         setGrading(gs);
@@ -945,7 +948,7 @@ export const Settings = () => {
           });
         }
       } catch (e) {
-        setError(e.message || 'Failed to load settings.');
+        setError(authErrorMessage(e) || 'Failed to load settings.');
       } finally {
         if (!cancelled) { setLoading(false); setGradingLoading(false); }
       }
@@ -959,11 +962,11 @@ export const Settings = () => {
     if (!form.schoolName.trim()) { setError('School name is required.'); return; }
     setSaving(true);
     try {
-      await updateConfig(form);
+      await updateConfig(activeSchoolId, form);
       setSaved(true);
       setError('');
       setTimeout(() => setSaved(false), 3000);
-    } catch (e) { setError(e.message); }
+    } catch (e) { setError(authErrorMessage(e)); }
     finally { setSaving(false); }
   };
 
@@ -980,7 +983,7 @@ export const Settings = () => {
     bands = bands.map((b) => ({ letter: b.letter, min: Number(b.min), descriptor: b.descriptor || '' })).sort((a, b) => b.min - a.min);
     setGradingSaving(true);
     try {
-      await createOrUpdateGradingSettings({
+      await createOrUpdateGradingSettings(activeSchoolId, {
         caWeight: Number(gradingForm.caWeight),
         examWeight: Number(gradingForm.examWeight),
         certificateRule: { minSubjectsAtDOrAbove: Number(gradingForm.minSubjectsAtDOrAbove) || 1 },
@@ -989,10 +992,10 @@ export const Settings = () => {
       setGradingSaved(true);
       setError('');
       // reload settings
-      const gs = await getGradingSettings();
+      const gs = await getGradingSettings(activeSchoolId);
       setGrading(gs);
       setTimeout(() => setGradingSaved(false), 3000);
-    } catch (e) { setError(e.message); }
+    } catch (e) { setError(authErrorMessage(e)); }
     finally { setGradingSaving(false); }
   };
 
@@ -1000,7 +1003,7 @@ export const Settings = () => {
     setExporting(true);
     setError('');
     try {
-      const backup = await exportData();
+      const backup = await exportData(activeSchoolId);
       const year  = config?.academicYear || 'school';
       const term  = config?.currentTerm || 'term';
       const date  = new Date().toISOString().slice(0, 10);
@@ -1011,7 +1014,7 @@ export const Settings = () => {
       setExportSaved(true);
       setTimeout(() => setExportSaved(false), 3000);
     } catch (e) {
-      setError(e.message || 'Export failed.');
+      setError(authErrorMessage(e) || 'Export failed.');
     } finally {
       setExporting(false);
     }

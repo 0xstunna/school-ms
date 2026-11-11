@@ -8,9 +8,11 @@ import {
   findStudentsToInactivate, commitImport,
 } from '../../db/studentImportService.js';
 import { getStudents } from '../../db/studentService.js';
+import { useAuth } from '../../contexts/AuthContext.jsx';
 import { CLASSES } from '../../utils/constants.js';
 import Button from '../../components/common/Button.jsx';
 import { Input, Select } from '../../components/common/Input.jsx';
+import { authErrorMessage } from '../../lib/authErrors.js';
 import {
   PageHeader, Card, LoadingScreen, Badge, StatCard, EmptyState,
 } from '../../components/common/Badge.jsx';
@@ -35,6 +37,7 @@ const FIELD_SYNONYMS = {
 };
 
 const ImportStudents = () => {
+  const { activeSchoolId } = useAuth();
   const fileInputRef = useRef(null);
 
   const [stage, setStage] = useState('upload'); // upload | mapping | preview | confirm | result
@@ -149,7 +152,7 @@ const ImportStudents = () => {
       setMapping(autoMap(hs));
       setStage('mapping');
     } catch (e) {
-      setError(`Failed to parse file: ${e.message}`);
+      setError(`Failed to parse file: ${authErrorMessage(e)}`);
     } finally {
       setParsing(false);
       resetFileInput();
@@ -202,7 +205,7 @@ const ImportStudents = () => {
     setSkipped(new Set());
 
     try {
-      const students = await getStudents();
+      const students = await getStudents({ schoolId: activeSchoolId });
       setAllStudents(students);
 
       // Pre-classify ready rows so link rows can be shown and skipped on preview.
@@ -219,7 +222,7 @@ const ImportStudents = () => {
 
       setStage('preview');
     } catch (e) {
-      setError(`Failed to load existing students: ${e.message}`);
+      setError(`Failed to load existing students: ${authErrorMessage(e)}`);
     }
   };
 
@@ -285,6 +288,7 @@ const ImportStudents = () => {
       ];
 
       const result = await commitImport(acceptedRows, {
+        schoolId:   activeSchoolId,
         fullList,
         studentsToInactivate: fullList
           ? findStudentsToInactivate(
@@ -296,7 +300,7 @@ const ImportStudents = () => {
       setCommitResult(result);
       setStage('result');
     } catch (e) {
-      setError(`Commit failed: ${e.message}`);
+      setError(`Commit failed: ${authErrorMessage(e)}`);
     } finally {
       setLoading(false);
     }

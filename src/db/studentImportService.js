@@ -297,8 +297,11 @@ function chunkArray(array, size) {
 
 // ── Commit accepted rows via batched merge writes (chunks of <= 500) ──
 // `deps` allows injecting mock Firebase implementations for testing.
+// `options.schoolId` is required — every imported student record is tagged
+// with the active school so Firestore tenant-isolation rules accept the write.
 export async function commitImport(acceptedRows, options = {}, deps = {}) {
-  const {fullList = false, studentsToInactivate = []} = options;
+  const {fullList = false, studentsToInactivate = [], schoolId} = options;
+  if (!schoolId) throw new Error('schoolId is required to commit a student import.');
   const {
     writeBatch: writeBatchImpl = writeBatch,
     doc: docImpl = doc,
@@ -306,7 +309,7 @@ export async function commitImport(acceptedRows, options = {}, deps = {}) {
     getConfig: getConfigImpl = getConfig,
   } = deps;
 
-  const config = await getConfigImpl();
+  const config = await getConfigImpl(schoolId);
   const academicYear = config?.academicYear || '';
   const currentTerm = config?.currentTerm || '';
   const now = new Date().toISOString();
@@ -322,6 +325,7 @@ export async function commitImport(acceptedRows, options = {}, deps = {}) {
         ref,
         data: {
           type: 'student',
+          schoolId,                              // tenant identity
           schoolpayCode: item.code,
           source: 'schoolpay',
           admissionNumber: item.row.admissionNumber || '',

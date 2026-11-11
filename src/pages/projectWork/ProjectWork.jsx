@@ -9,6 +9,7 @@ import { generateAcademicYears } from '../../utils/grading.js';
 import Button from '../../components/common/Button.jsx';
 import Modal from '../../components/common/Modal.jsx';
 import { Input, Select, Textarea, FormRow } from '../../components/common/Input.jsx';
+import { authErrorMessage } from '../../lib/authErrors.js';
 import { PageHeader, Card, Badge, EmptyState, LoadingScreen } from '../../components/common/Badge.jsx';
 
 const LEVEL_COLOR = {
@@ -21,7 +22,7 @@ const LEVEL_COLOR = {
 
 /** Project Work management — new curriculum stand-alone records shown on NLSC report cards. */
 export const ProjectWork = () => {
-  const { user } = useAuth();
+  const { user, activeSchoolId } = useAuth();
   const [config, setConfig] = useState(null);
   const [students, setStudents] = useState([]);
   const [records, setRecords] = useState([]);
@@ -51,12 +52,12 @@ export const ProjectWork = () => {
     let cancelled = false;
     (async () => {
       try {
-        const [cfg, studs] = await Promise.all([getConfig(), getStudents({ status: 'active' })]);
+        const [cfg, studs] = await Promise.all([getConfig(activeSchoolId), getStudents({ schoolId: activeSchoolId, status: 'active' })]);
         if (cancelled) return;
         setConfig(cfg);
         setStudents(studs);
       } catch (e) {
-        setError(e.message || 'Failed to load project work data.');
+        setError(authErrorMessage(e) || 'Failed to load project work data.');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -69,7 +70,7 @@ export const ProjectWork = () => {
       const recs = await getProjectWork();
       setRecords(recs);
     } catch (e) {
-      setError(e.message || 'Failed to load project work records.');
+      setError(authErrorMessage(e) || 'Failed to load project work records.');
     }
   }, []);
 
@@ -158,7 +159,7 @@ export const ProjectWork = () => {
       resetForm();
       await loadRecords();
       setTimeout(() => setSaved(false), 3000);
-    } catch (e) { setError(e.message); }
+    } catch (e) { setError(authErrorMessage(e)); }
     finally { setSaving(false); }
   };
 
@@ -167,7 +168,7 @@ export const ProjectWork = () => {
     try {
       await deleteProjectWork(id);
       await loadRecords();
-    } catch (e) { setError(e.message || 'Failed to delete.'); }
+    } catch (e) { setError(authErrorMessage(e) || 'Failed to delete.'); }
   };
 
   if (loading) return <LoadingScreen message="Loading project work…" />;

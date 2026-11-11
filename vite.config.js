@@ -11,6 +11,11 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      // firebase-admin is server-only (Admin SDK). It must never be bundled
+      // into the browser/Electron client bundle.
+      external: ['firebase-admin'],
+    },
   },
   define: {
     global: 'globalThis',

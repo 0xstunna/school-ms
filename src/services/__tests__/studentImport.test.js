@@ -214,7 +214,7 @@ const accepted1 = [
 
 batchCommits = 0;
 batchSetCalls = 0;
-await commitImport(accepted1, {}, {
+await commitImport(accepted1, {schoolId: 'sch_test'}, {
   writeBatch: mockWriteBatch,
   doc: mockDoc,
   db: 'mock-db',
@@ -239,7 +239,7 @@ const existingWithHistory = student('SP001', {
   id: 's1', fullName: 'Alice', classLevel: 'S1', stream: 'A',
   classHistory: [{academicYear: '2025/2026', term: 'Term 1', classLevel: 'S1'}],
 });
-await commitImport([{action: 'classChanged', code: 'SP001', fullName: 'Alice', classLevel: 'S2', existingStudent: existingWithHistory}], {}, {
+await commitImport([{action: 'classChanged', code: 'SP001', fullName: 'Alice', classLevel: 'S2', existingStudent: existingWithHistory}], {schoolId: 'sch_test'}, {
   writeBatch: mockWriteBatch,
   doc: mockDoc,
   db: 'mock-db',
@@ -260,7 +260,7 @@ batchCommits = 0;
 batchSetCalls = 0;
 const codedStudents = [student('SP001', {id: 's1', source: 'schoolpay'}), student('SP002', {id: 's2', source: 'schoolpay'})];
 
-await commitImport([], {fullList: false, studentsToInactivate: codedStudents}, {
+await commitImport([], {fullList: false, schoolId: 'sch_test', studentsToInactivate: codedStudents}, {
   writeBatch: mockWriteBatch,
   doc: mockDoc,
   db: 'mock-db',
@@ -268,7 +268,7 @@ await commitImport([], {fullList: false, studentsToInactivate: codedStudents}, {
 });
 assert.strictEqual(batchCommits, 0, 'no inactivation without fullList');
 
-await commitImport([], {fullList: true, studentsToInactivate: codedStudents}, {
+await commitImport([], {fullList: true, schoolId: 'sch_test', studentsToInactivate: codedStudents}, {
   writeBatch: mockWriteBatch,
   doc: mockDoc,
   db: 'mock-db',
@@ -294,7 +294,7 @@ const manyOps = [];
 for (let i = 0; i < 1200; i++) {
   manyOps.push({action: 'new', code: `C${i}`, row: {}, fullName: `Student ${i}`, classLevel: 'S1'});
 }
-await commitImport(manyOps, {}, {
+await commitImport(manyOps, {schoolId: 'sch_test'}, {
   writeBatch: mockWriteBatch,
   doc: mockDoc,
   db: 'mock-db',
@@ -308,7 +308,7 @@ console.log('  commitImport (chunking <= 500): PASS');
 // Test: unchanged rows are skipped (no write)
 batchCommits = 0;
 batchSetCalls = 0;
-await commitImport([{action: 'unchanged', code: 'SP002', fullName: 'Bob', classLevel: 'S1', existingStudent: student('SP002')}], {}, {
+await commitImport([{action: 'unchanged', code: 'SP002', fullName: 'Bob', classLevel: 'S1', existingStudent: student('SP002')}], {schoolId: 'sch_test'}, {
   writeBatch: mockWriteBatch,
   doc: mockDoc,
   db: 'mock-db',
@@ -321,7 +321,7 @@ console.log('  commitImport (unchanged skipped): PASS');
 // Test: link action writes schoolpayCode to existing doc
 batchCommits = 0;
 batchSetCalls = 0;
-await commitImport([{action: 'link', code: 'SP003', fullName: 'Bob', classLevel: 'S1', existingStudent: student('', {id: 's2', source: 'manual'})}], {}, {
+await commitImport([{action: 'link', code: 'SP003', fullName: 'Bob', classLevel: 'S1', existingStudent: student('', {id: 's2', source: 'manual'})}], {schoolId: 'sch_test'}, {
   writeBatch: mockWriteBatch,
   doc: mockDoc,
   db: 'mock-db',

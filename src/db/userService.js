@@ -43,7 +43,8 @@ const createFirebaseAuthUser = async (email, password) => {
 // SETUP — first admin (called during SetupWizard, NO auth session yet)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const createFirstAdmin = async (data) => {
+export const createFirstAdmin = async (data, schoolId) => {
+  if (!schoolId) throw new Error('schoolId is required to create the first admin.');
   const email = data.email.toLowerCase().trim();
   let uid;
 
@@ -63,10 +64,11 @@ export const createFirstAdmin = async (data) => {
     }
   }
 
-  // 2. Write the Firestore profile AND the setup flag in ONE batch so they are
-  //    atomic: either both land or neither. config/setup is the single source of
-  //    truth for "is the system set up?"; once it exists the setup screen never
-  //    runs again (App reads it via isSetupComplete() before sign-in).
+  // 2. Write the Firestore profile AND the per-school setup flag in ONE batch
+  //    so they are atomic: either both land or neither. The per-school
+  //    schools/{schoolId}/config/setup doc is the source of truth for "is this
+  //    school set up?"; once it exists the setup screen never runs again for
+  //    that school.
   const now = new Date().toISOString();
   const batch = writeBatch(db);
 
@@ -76,7 +78,11 @@ export const createFirstAdmin = async (data) => {
     fullName:        data.fullName.trim(),
     email,
     role:            'admin',
+    schoolId,                       // active school
+    schoolIds:         [schoolId],
+    membershipActive:  { [schoolId]: true },
     active:          true,
+    platformAdmin:   false,
     assignedClasses: [],
     createdBy:       'system',
     createdAt:       now,
@@ -84,8 +90,9 @@ export const createFirstAdmin = async (data) => {
   };
 
   batch.set(doc(db, COL, uid), docData);
-  batch.set(doc(db, 'config', 'setup'), {
+  batch.set(doc(db, 'schools', schoolId, 'config', 'setup'), {
     type:          'setup',
+    schoolId,
     setupComplete: true,
     createdBy:     'system',
     createdAt:     now,

@@ -13,6 +13,7 @@ import { formatDate, getGradeFromMarks } from '../../utils/grading.js';
 import Button from '../../components/common/Button.jsx';
 import Modal, { ConfirmModal } from '../../components/common/Modal.jsx';
 import { Input, Select, FormRow } from '../../components/common/Input.jsx';
+import { authErrorMessage } from '../../lib/authErrors.js';
 import { GradeBadge, EmptyState, PageHeader, Card, Badge, LoadingScreen, Spinner } from '../../components/common/Badge.jsx';
 
 /** Detect NLSC cards from data attached by resultsService (grading interface). */
@@ -49,7 +50,7 @@ const ExamModal = ({ open, onClose, onSave, config }) => {
       const subj = subjects.find((s) => s.id === form.subjectId);
       await onSave({ ...form, subjectName: subj?.name || '' });
       onClose();
-    } catch (e) { setError(e.message); }
+    } catch (e) { setError(authErrorMessage(e)); }
     finally { setLoading(false); }
   };
 
@@ -101,7 +102,7 @@ const ExamModal = ({ open, onClose, onSave, config }) => {
    ENTER MARKS MODAL (unchanged)
 ───────────────────────────────────────────── */
 const MarksModal = ({ open, onClose, exam }) => {
-  const { user } = useAuth();
+  const { user, activeSchoolId } = useAuth();
   const [students, setStudents] = useState([]);
   const [marks, setMarks]       = useState({});
   const [loading, setLoading]   = useState(true);
@@ -115,8 +116,8 @@ const MarksModal = ({ open, onClose, exam }) => {
     setSaveErrors({});
     const stream = exam.classStream === 'all' ? undefined : exam.classStream.slice(2);
     Promise.all([
-      getStudents({ classLevel: exam.classLevel, stream }),
-      getResultsForExam(exam.id),
+      getStudents({ schoolId: activeSchoolId, classLevel: exam.classLevel, stream }),
+      getResultsForExam(exam.id, activeSchoolId),
     ]).then(([studs, results]) => {
       setStudents(studs);
       const map = {};
@@ -168,7 +169,7 @@ const MarksModal = ({ open, onClose, exam }) => {
         return;
       }
 
-      await bulkSaveResults(exam.id, toSave, exam.outOf, user.id);
+      await bulkSaveResults(exam.id, toSave, exam.outOf, user.id, activeSchoolId);
       setSaved(true);
     } finally { setSaving(false); }
   };
@@ -244,6 +245,7 @@ const MarksModal = ({ open, onClose, exam }) => {
    REPORT CARDS MODAL  ← NEW
 ───────────────────────────────────────────── */
 const ReportCardsModal = ({ open, onClose, config }) => {
+  const { activeSchoolId } = useAuth();
   const [classLevel, setClassLevel] = useState('S1');
   const [stream, setStream]         = useState('all');
   const [loading, setLoading]       = useState(false);
@@ -262,14 +264,14 @@ const ReportCardsModal = ({ open, onClose, config }) => {
     setError('');
     setCards(null);
     try {
-      const data = await getReportCardData(classLevel, stream, config?.academicYear, config?.currentTerm);
+      const data = await getReportCardData(classLevel, stream, config?.academicYear, config?.currentTerm, activeSchoolId);
       if (data.reportCards.length === 0) {
         setError('No students or no exam results found for this selection.');
       } else {
         setCards(data);
       }
     } catch (e) {
-      setError(e.message || 'Failed to load report card data.');
+      setError(authErrorMessage(e) || 'Failed to load report card data.');
     } finally {
       setLoading(false);
     }
@@ -505,6 +507,7 @@ const ReportCardsModal = ({ open, onClose, config }) => {
 
 /*** BROADSHEET MODAL START ***/
 const BroadsheetModal = ({ open, onClose, config }) => {
+  const { activeSchoolId } = useAuth();
   const [classLevel, setClassLevel] = useState('S1');
   const [stream, setStream]         = useState('all');
   const [loading, setLoading]       = useState(false);
@@ -520,14 +523,14 @@ const BroadsheetModal = ({ open, onClose, config }) => {
     setError('');
     setData(null);
     try {
-      const result = await getReportCardData(classLevel, stream, config?.academicYear, config?.currentTerm);
+      const result = await getReportCardData(classLevel, stream, config?.academicYear, config?.currentTerm, activeSchoolId);
       if (result.reportCards.length === 0) {
         setError('No students or no exam results found for this selection.');
       } else {
         setData(result);
       }
     } catch (e) {
-      setError(e.message || 'Failed to load broadsheet data.');
+      setError(authErrorMessage(e) || 'Failed to load broadsheet data.');
     } finally {
       setLoading(false);
     }
@@ -713,7 +716,7 @@ const BroadsheetModal = ({ open, onClose, config }) => {
 
 /*** BROADSHEET MODAL END ***/
 const Exams = () => {
-  const { user } = useAuth();
+  const { user, activeSchoolId } = useAuth();
   const [exams, setExams]               = useState([]);
   const [config, setConfig]             = useState(null);
   const [loading, setLoading]           = useState(true);
@@ -725,18 +728,19 @@ const Exams = () => {
   const [actionLoading, setActionLoading] = useState(false);
 
   const load = useCallback(async () => {
+    if (!activeSchoolId) return;
     setLoading(true);
     try {
-      const cfg = await getConfig();
+      const cfg = await getConfig(activeSchoolId);
       setConfig(cfg);
-      setExams(await getExams({ academicYear: cfg?.academicYear, term: cfg?.currentTerm }));
+      setExams(await getExams({ schoolId: activeSchoolId, academicYear: cfg?.academicYear, term: cfg?.currentTerm }));
     } finally { setLoading(false); }
-  }, []);
+  }, [activeSchoolId]);
 
   useEffect(() => { load(); }, [load]);
 
   const handleCreate = async (form) => {
-    await createExam(form, user.id);
+    await createExam({ ...form, schoolId: activeSchoolId }, user.id);
     await load();
   };
 
