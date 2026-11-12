@@ -75,13 +75,15 @@ function isDOrAbove(letter) {
  * @returns {GradingSystem}
  */
 export function createNlscGrading(settings = {}) {
-  const bands = (settings.gradeBands && settings.gradeBands.length)
-    ? [...settings.gradeBands].sort((a, b) => b.min - a.min)
+  const s = settings || {}; // tolerate null (e.g. grading settings not yet initialized)
+
+  const bands = (s.gradeBands && s.gradeBands.length)
+    ? [...s.gradeBands].sort((a, b) => b.min - a.min)
     : [...PLACEHOLDER_GRADE_BANDS];
 
-  const caWeight = Number(settings.caWeight) || defaultCaWeight;
-  const examWeight = Number(settings.examWeight) || defaultExamWeight;
-  const certificateRule = settings.certificateRule || DEFAULT_CERTIFICATE_RULE;
+  const caWeight = Number(s.caWeight) || defaultCaWeight;
+  const examWeight = Number(s.examWeight) || defaultExamWeight;
+  const certificateRule = s.certificateRule || DEFAULT_CERTIFICATE_RULE;
   const minSubjectsAtDOrAbove = Number(certificateRule.minSubjectsAtDOrAbove) || 1;
 
   /**
